@@ -1,0 +1,16 @@
+The following modifications will allow the Mighty Ohm Geiger counter board to operate on 5 volts instead of 3 volts.  This modification is required in order to make the serial output of the geiger board compatible with the Arduino Uno.
+
+Modify as follows:
+
+1. Change R6 to 1K ohm
+2. Change R11 to 330 Ohms
+
+After making the resistor changes above the next step is wiring the Arduino to the geiger board.
+
+Power & Ground
+1. Connect +5v from Arduino to Geiger PCB Pulse J6 pin 1.
+2. Connect GND from Arduino to Geiger PCB Pulse J6 pin 3
+
+Serial Data
+1. Connect Arduino D5 to Geiger PCB Serial J7 pin 5
+

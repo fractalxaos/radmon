@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html>
+<!--<META http-equiv="refresh" content="60">-->
+<head>
+  <title>DIY Radiation Monitor</title>
+  <script src="jQuery.min.js"></script>
+</head>
+
+<body background="./static/chalk.jpg">
+
+<center>
+<h1>DIY Radiation Monitor</h1>
+<hr>
+
+<table width="750" border="0" cellpadding="1">
+  <tr>
+    <td align="center">
+      <b><font size="5">
+      <text id="date"></text>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<text id="time"></text>
+      </font></b>
+    </td>
+  </tr>
+
+  <tr>
+    <td>
+      <table width="100%" border="1", cellpadding="10">
+        <tr>
+          <td width="50%" align="center">
+            <b><font size="5">
+            Current Reading
+            </font></b>
+            <br><br>
+            <b><font size="4">
+            Counts per minute: <text id="cpm"></text><br>
+            Counts per second: <text id="cps"></text><br>
+            uSv per hour: <text id="uSvPerHr"></text>
+            </font></b>
+          </td>
+          <td width="50%" align="center" valign="center">
+            <b><font size="5">
+            Device Status
+            </font></b>
+            <br><br>
+            <b><font size="4">
+            Mode: <text id="mode"></text><br>
+            Status: <text id="status"></text>      
+            </font></b>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <tr>
+    <td>
+      <table width="100%" border="1", cellpadding="10">
+        <tr>
+          <td align="center">
+          <img id="1-day-cpm">
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <tr>
+    <td>
+      <table width="100%" border="1", cellpadding="10">
+        <tr>
+          <td align="center">
+          <img id="1-day-uSv">
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <tr>
+    <td>
+      <table width="100%" border="1", cellpadding="10">
+        <tr>
+          <td align="center">
+          <img id="4-week-cpm">
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <tr>
+    <td>
+      <table width="100%" border="1", cellpadding="10">
+        <tr>
+          <td align="center">
+          <img id="4-week-uSv">
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <tr>
+    <td>
+      <table width="100%" border="1", cellpadding="10">
+        <tr>
+          <td align="center">
+          <img id="1-year-cpm">
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <tr>
+    <td>
+      <table width="100%" border="1", cellpadding="10">
+        <tr>
+          <td align="center">
+          <img id="1-year-uSv">
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <tr>
+    <td>
+      <table width="100%" border="1", cellpadding="10">
+        <tr>
+          <td>
+            <b>NOTES:</b>
+            <li>For more information visit <a href="http://www.eugenemakerspace.com" target="_new"><i>www.eugenemakerspace.com</i></a>
+            <li>Project plans and notes available at <a href="http://github.com/fractalxaos/Radmon" target="_new"><i>GitHub.com</i></a>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</center>
+
+  <script>
+
+    function getRadmon() {
+      $.ajaxSetup({cache:false, url: "dynamic/radmonData.js",
+        success: function(result){
+          jStr = result.slice(1,-2);
+          dataObj = JSON.parse(jStr);
+          //data = dataObj.radmon;
+          parseRadmon(dataObj);
+        }
+      });
+      $.ajax();
+    }
+
+    function getGraphs() {
+      document.getElementById("1-day-cpm").src = "dynamic/radGraph1.png";
+      document.getElementById("1-day-uSv").src = "dynamic/radGraph2.png";
+      document.getElementById("4-week-cpm").src = "dynamic/radGraph3.png";
+      document.getElementById("4-week-uSv").src = "dynamic/radGraph4.png";
+      document.getElementById("1-year-cpm").src = "dynamic/radGraph5.png";
+      document.getElementById("1-year-uSv").src = "dynamic/radGraph6.png";
+    }
+
+    function parseRadmon(dataItem) {
+      var timeStamp
+      var date;
+      var time;
+      var sTmp;
+
+      timeStamp = dataItem.time;
+      if (timeStamp != "") {
+        date = timeStamp.split(" ")[0];
+        time = timeStamp.split(" ")[1];
+        $("#date").text(date);
+        $("#time").text(time);
+      } else {
+        $("#date").text("");
+        $("#time").text("");
+      }        
+      
+      $("#cps").text(dataItem.CPS);
+      $("#cpm").text(dataItem.CPM);
+      $("#uSvPerHr").text(dataItem.uSvPerHr);
+
+      sTmp = (dataItem.Mode).toLowerCase();
+      $("#mode").text(sTmp);
+
+      $("#status").text(dataItem.status);
+      if (dataItem.status == "online") {
+        document.getElementById("status").style.color = "green";
+      }
+      else {
+        document.getElementById("status").style.color = "red";
+      }
+    }
+
+    $(document).ready(function() {
+      getRadmon();
+      getGraphs();
+      setInterval(getRadmon, 1000);
+      setInterval(getGraphs, 60000);
+    });
+
+  </script>
+</body>
+</html>
+

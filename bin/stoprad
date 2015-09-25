@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# Next stop the database update process.
+
+PROCESS_ID="$(ps x | awk '/[r]admonAgent.py/{print $1}')"
+if [ -n "$PROCESS_ID" ]; then
+  printf "killing radmon agent [%s]\n" $PROCESS_ID
+  kill $PROCESS_ID
+else
+  echo radmon agent not running
+fi
