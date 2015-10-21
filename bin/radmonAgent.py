@@ -52,7 +52,7 @@ _HTTP_REQUEST_TIMEOUT = 5 # number seconds to wait for a response to HTTP reques
 
 ## Define run time options
 deviceQueryInterval = 5.0  # period defines how often the RR database gets updated
-deviceUrl = "http://73.157.139.23:4371/jsdata"  # radiation monitor network address
+deviceUrl = "http://{IP address}:{port}/jsdata"  # radiation monitor network address
 debugOption = False
 
   ###  PRIVATE METHODS  ###
