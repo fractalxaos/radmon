@@ -40,19 +40,23 @@ import os
 import json
 import multiprocessing
 
-## Define constants
-_TMP_DIRECTORY = "/tmp/radmon"
-_RRD_FILE = "/home/pi/database/radmonData.rrd"  # the file that stores the data
-_OUTPUT_DATA_FILE = "/tmp/radmon/radmonData.js"
+    ### FILE AND FOLDER LOCATIONS ###
 
-_WEB_DATA_UPDATE_INTERVAL = 1
-_CHART_UPDATE_INTERVAL = 60
-_DATABASE_UPDATE_INTERVAL = 30
+_TMP_DIRECTORY = "/tmp/radmon" # folder for charts and output data file
+_RRD_FILE = "/home/{user}/database/radmonData.rrd"  # database that stores the data
+_OUTPUT_DATA_FILE = "/tmp/radmon/radmonData.js" # output file used by HTML docs
+
+    ### GLOBAL CONSTANTS ###
+
+_DEFAULT_WEB_DATA_UPDATE_INTERVAL = 10
+_CHART_UPDATE_INTERVAL = 60 # defines how often the charts get updated
+_DATABASE_UPDATE_INTERVAL = 30 # defines how often the database gets updated
 _HTTP_REQUEST_TIMEOUT = 5 # number seconds to wait for a response to HTTP request
 
-## Define run time options
-deviceQueryInterval = 5.0  # period defines how often the RR database gets updated
-deviceUrl = "http://{IP address}:{port}/jsdata"  # radiation monitor network address
+   ### GLOBAL VARIABLES ###
+
+webUpdateInterval = _DEFAULT_WEB_DATA_UPDATE_INTERVAL  # web update frequency
+deviceUrl = "http://192.168.1.8"  # radiation monitor network address
 debugOption = False
 
   ###  PRIVATE METHODS  ###
@@ -66,23 +70,24 @@ def getTimeStamp():
     return time.strftime( "%Y/%m/%d %T", time.localtime() )
 ##end def
 
-def sendOffLineStatusMsg():
+def sendOffLineStatusMessage():
     """Sets the status of the the upstream device to "offline" and sends
        blank data to the downstream clients.
        Parameters: none
        Returns nothing.
     """
-    sTmp = "\"time\":\"\",\"CPS\":\"\",\"CPM\":\"\"," \
+    sTmp = "\"date\":\"\",\"CPS\":\"\",\"CPM\":\"\"," \
            "\"uSvPerHr\":\"\",\"Mode\":\"\",\"status\":\"offline\""
 
     lsTmp = sTmp.split(',')
-    writeJSONfile(lsTmp)
+    lsTmp[0] = "\"date\":\"%s\"" % getTimeStamp()
+    writeOutputDataFile(lsTmp)
     return
 ##end def
 
   ###  PUBLIC METHODS  ###
 
-def getDataString(deviceUrl, HttpRequestTimeout):
+def getRadmonData(deviceUrl, HttpRequestTimeout):
         """Send http request to radiation monitoring device.  The response
            from the device contains the radiation data.  The data is formatted
            as an html document.
@@ -95,14 +100,13 @@ def getDataString(deviceUrl, HttpRequestTimeout):
         """
         content = ""
         try:
-            conn = urllib2.urlopen(deviceUrl, timeout=HttpRequestTimeout)
+            conn = urllib2.urlopen(deviceUrl + "/jsdata", timeout=HttpRequestTimeout)
         except Exception, exError:
             # If no response is received from the device, then assume that
             # the device is down or unavailable over the network.  In
             # that case set the status of the device to offline.
             print "%s: device offline: %s" % \
                                 (getTimeStamp(), exError)
-            sendOffLineStatusMsg()
             return None
         else:
             for line in conn:
@@ -112,9 +116,6 @@ def getDataString(deviceUrl, HttpRequestTimeout):
                     (getTimeStamp())
                 return None
             del conn
-            
-            if debugOption:
-                print "%s\n" % content # DEBUG
             return content
 ##end def
 
@@ -148,9 +149,6 @@ def parseDataString(sData, lsData, dData):
         if "=" in item:
             dData[item.split('=')[0]] = item.split('=')[1]
 
-    if debugOption and 0:
-        print lsData
-        print dData
     return True
 ##end def
 
@@ -186,7 +184,7 @@ def convertData(lsData, dData):
     return result
 ##end def
 
-def writeJSONfile(lsData):
+def writeOutputDataFile(lsData):
     """Convert individual weather string data items as necessary.
        Parameters:
            lsData - a list object containing the data to be written
@@ -198,16 +196,17 @@ def writeJSONfile(lsData):
 
     # Apply JSON formatting to the string and write it to a
     # file for use by html documents.
-    strJSON = "[{%s}]\n" % (sTmp)
+    sData = "[{%s}]\n" % (sTmp)
 
     try:
         fc = open(_OUTPUT_DATA_FILE, "w")
-        fc.write(strJSON)
+        fc.write(sData)
         fc.close()
     except Exception, exError:
         print "%s: write to JSON file failed: %s" % \
                              (getTimeStamp(), exError)
         return False
+
     return True
 ## end def
 
@@ -284,7 +283,7 @@ def getCLarguments():
           -u sets the url of the radiation monitoring device
        Returns nothing.
     """
-    global debugOption, deviceQueryInterval, deviceURL
+    global debugOption, webUpdateInterval, deviceUrl
 
     index = 1
     while index < len(sys.argv):
@@ -292,13 +291,13 @@ def getCLarguments():
             debugOption = True
         elif sys.argv[index] == '-t':
             try:
-                deviceQueryInterval = abs(int(sys.argv[index + 1]))
+                webUpdateInterval = abs(int(sys.argv[index + 1]))
             except:
                 print "invalid polling period"
                 exit(-1)
             index += 1
         elif sys.argv[index] == '-u':
-            deviceURL = sys.argv[index + 1]
+            deviceUrl = sys.argv[index + 1]
             index += 1
         else:
             cmd_name = sys.argv[0].split('/')
@@ -326,10 +325,10 @@ def main():
        Parameters: none
        Returns nothing.
     """
+
     lastChartUpdateTime = - 1 # last time charts generated
     lastDatabaseUpdateTime = -1 # last time the rrdtool database updated
     lastWebDataUpdateTime = -1 # last time output JSON file updated
-    lastDeviceQueryTime = -1 # last time radiation device queried for data
     dData = {}  # dictionary object for temporary data storage
     lsData = [] # list object for temporary data storage
 
@@ -352,13 +351,14 @@ def main():
 
         # At the radiation device query interval request and process
         # the data from the device.
-        if currentTime - lastDeviceQueryTime > deviceQueryInterval:
-            lastDeviceQueryTime = currentTime
+        if currentTime - lastWebDataUpdateTime > webUpdateInterval:
+            llastWebDataUpdateTime = currentTime
             result = True
 
             # Get the data string from the device.
-            sData = getDataString(deviceUrl, _HTTP_REQUEST_TIMEOUT)
+            sData = getRadmonData(deviceUrl, _HTTP_REQUEST_TIMEOUT)
             if sData == None:
+                sendOffLineStatusMessage()
                 result = False
 
             # If successful parse the data.
@@ -368,19 +368,16 @@ def main():
             # If parsing successful, convert the data.
             if result:
                 result = convertData(lsData, dData)
-                
-        # At the web update interval, update the JSON file used to pass
-        # radiation data to html documents.
-        if currentTime - lastWebDataUpdateTime > _WEB_DATA_UPDATE_INTERVAL:
-            lastWebDataUpdateTime = currentTime
+
+            # If conversion successful, write data to output file.
             if result:
-                lsData[0] = "\"time\":\"%s\"" % getTimeStamp()
-                writeJSONfile(lsData)
+                lsData[0] = "\"date\":\"%s\"" % getTimeStamp()
+                writeOutputDataFile(lsData)
 
         # At the rrdtool database update interval, update the database.
         if currentTime - lastDatabaseUpdateTime > _DATABASE_UPDATE_INTERVAL:   
+            lastDatabaseUpdateTime = currentTime
             if result:
-                lastDatabaseUpdateTime = currentTime
                 ## Update the round robin database with the parsed data.
                 result = updateDatabase(dData)
 
@@ -395,8 +392,8 @@ def main():
 
         elapsedTime = time.time() - currentTime
         if debugOption:
-            print "processing time: %s\n" % elapsedTime
-        remainingTime = _WEB_DATA_UPDATE_INTERVAL - elapsedTime
+            print "web update: %6f sec\n" % elapsedTime
+        remainingTime = webUpdateInterval - elapsedTime
         if remainingTime > 0:
             time.sleep(remainingTime)
              

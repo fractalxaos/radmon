@@ -1,15 +1,16 @@
 #!/bin/bash
 #
-APP_PATH="/home/pi/bin/"
-LOG_PATH=/tmp/log
-
-cd $APP_PATH
-
-# First start up RR database update app
+APP_PATH="/home/{user}/bin"
+LOG_PATH="/home/{user}/log"
 
 PROCESS_ID="$(ps x | awk '/[r]admonAgent.py/{print $1}')"
+
 if [ -n "$PROCESS_ID" ]; then
-  printf "radmon agent running [%s]\n" $PROCESS_ID
+  if [ "$1" != "-q" ]; then
+    printf "radmon agent running [%s]\n" $PROCESS_ID
+  fi
 else
-  ./radmonAgent.py -t 5 -u 'http://73.157.139.23:4371' >> $LOG_PATH/radmonAgent.log 2>&1 &
+  printf "starting up radmon agent\n"
+  cd $APP_PATH
+  ./radmonAgent.py -t 10 -u 'http://73.157.139.23:4371/jsdata' >> $LOG_PATH/radmonAgent.log 2>&1 &
 fi

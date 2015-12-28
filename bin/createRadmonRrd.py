@@ -32,7 +32,7 @@ import subprocess
 
     ### DEFINE FILE LOCATIONS ###
 
-_RRD_FILE = "/home/pi/database/radmonData.rrd"  # the file that stores the data
+_RRD_FILE = "/home/{user}/database/radmonData.rrd"  # the file that stores the data
 _RRD_SIZE_IN_DAYS = 370 # days
 _DATABASE_UPDATE_INTERVAL = 30
 

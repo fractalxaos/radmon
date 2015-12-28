@@ -166,18 +166,19 @@
       var timeStamp
       var date;
       var time;
-      var sTmp;
+      var hourminute;
 
-      timeStamp = dataItem.time;
-      if (timeStamp != "") {
+      timeStamp = dataItem.date;
+      if (timeStamp != "") { 
         date = timeStamp.split(" ")[0];
         time = timeStamp.split(" ")[1];
+        hourminute = time.split(":")[0] + ":" + time.split(":")[1];
         $("#date").text(date);
-        $("#time").text(time);
+        $("#time").text(hourminute + " (PDT)");
       } else {
         $("#date").text("");
         $("#time").text("");
-      }        
+      }
       
       $("#cps").text(dataItem.CPS);
       $("#cpm").text(dataItem.CPM);
@@ -198,7 +199,7 @@
     $(document).ready(function() {
       getRadmon();
       getGraphs();
-      setInterval(getRadmon, 1000);
+      setInterval(getRadmon, 10000);
       setInterval(getGraphs, 60000);
     });
 
