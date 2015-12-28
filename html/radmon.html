@@ -1,145 +1,112 @@
 <!DOCTYPE html>
 <html>
-<!--<META http-equiv="refresh" content="60">-->
 <head>
-  <title>DIY Radiation Monitor</title>
-  <script src="jQuery.min.js"></script>
+<title>DIY Radiation</title>
+<script src="jQuery.min.js"></script>
+<style>
+body {
+    background-image: url("static/chalk.jpg");
+}
+#frame {
+    width:800px;
+    text-align:center;
+    margin:auto;
+}
+#datetime {
+    text-align:center;
+    display:inline-block;
+    margin:1px;
+    font-size:21px;
+    color:black;
+    width:700px;
+    padding:10px;
+}
+div.currentdata {
+    font-size:20px;
+    display:inline-block;
+    margin:1px;
+    text-align:center;
+    color:black;
+    width:342px;
+    padding:10px;
+    border-style:solid;
+    border-width:1px;	 
+}
+div.chartitem {
+    display:inline-block;
+    text-align:left;
+    margin:1px;
+    width: 730px;
+    padding:2px;
+    border-style:solid;
+    border-width:1px;	 
+}
+img.chart {
+    width:100%;
+}
+</style>
 </head>
 
-<body background="./static/chalk.jpg">
-
-<center>
-<h1>DIY Radiation Monitor</h1>
+<body>
+<div id="frame">
+<h2>DIY Radiation Monitor</h2>
 <hr>
+<b>
 
-<table width="750" border="0" cellpadding="1">
-  <tr>
-    <td align="center">
-      <b><font size="5">
-      <text id="date"></text>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<text id="time"></text>
-      </font></b>
-    </td>
-  </tr>
+<div id="datetime">
+<text id="date"></text>
+&nbsp;&nbsp;
+<text id="time"></text>
+</div>
 
-  <tr>
-    <td>
-      <table width="100%" border="1", cellpadding="10">
-        <tr>
-          <td width="50%" align="center">
-            <b><font size="5">
-            Current Reading
-            </font></b>
-            <br><br>
-            <b><font size="4">
-            Counts per minute: <text id="cpm"></text><br>
-            Counts per second: <text id="cps"></text><br>
-            uSv per hour: <text id="uSvPerHr"></text>
-            </font></b>
-          </td>
-          <td width="50%" align="center" valign="center">
-            <b><font size="5">
-            Device Status
-            </font></b>
-            <br><br>
-            <b><font size="4">
-            Mode: <text id="mode"></text><br>
-            Status: <text id="status"></text>      
-            </font></b>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
+<div class="currentdata">
+<ins>Current Reading</ins><br><br>
+Counts per minute: <text id="cpm"></text><br>
+Counts per second: <text id="cps"></text><br>
+uSv per hour: <text id="uSvPerHr"></text>
+</div>
 
-  <tr>
-    <td>
-      <table width="100%" border="1", cellpadding="10">
-        <tr>
-          <td align="center">
-          <img id="1-day-cpm">
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
+<div class="currentdata">
+<ins>Status</ins><br><br>
+Mode: <text id="mode"></text><br>
+Device: <text id="status"></text><br>
+&nbsp;     
+</div>
 
-  <tr>
-    <td>
-      <table width="100%" border="1", cellpadding="10">
-        <tr>
-          <td align="center">
-          <img id="1-day-uSv">
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
+<div class="chartitem">
+<img class="chart" id="1-day-cpm">
+</div>
 
-  <tr>
-    <td>
-      <table width="100%" border="1", cellpadding="10">
-        <tr>
-          <td align="center">
-          <img id="4-week-cpm">
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
+<div class="chartitem">
+<img class="chart" id="1-day-uSv">
+</div>
 
-  <tr>
-    <td>
-      <table width="100%" border="1", cellpadding="10">
-        <tr>
-          <td align="center">
-          <img id="4-week-uSv">
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
+<div class="chartitem">
+<img class="chart" id="4-week-cpm">
+</div>
 
-  <tr>
-    <td>
-      <table width="100%" border="1", cellpadding="10">
-        <tr>
-          <td align="center">
-          <img id="1-year-cpm">
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
+<div class="chartitem">
+<img class="chart" id="4-week-uSv">
+</div>
 
-  <tr>
-    <td>
-      <table width="100%" border="1", cellpadding="10">
-        <tr>
-          <td align="center">
-          <img id="1-year-uSv">
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
+<div class="chartitem">
+<img class="chart" id="1-year-cpm">
+</div>
 
-  <tr>
-    <td>
-      <table width="100%" border="1", cellpadding="10">
-        <tr>
-          <td>
-            <b>NOTES:</b>
-            <li>For more information visit <a href="http://www.eugenemakerspace.com" target="_new"><i>www.eugenemakerspace.com</i></a>
-            <li>Project plans and notes available at <a href="http://github.com/fractalxaos/Radmon" target="_new"><i>GitHub.com</i></a>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>
-</center>
+<div class="chartitem">
+<img class="chart" id="1-year-uSv">
+</div>
 
-  <script>
+<div class="chartitem">
+<b>NOTES:</b>
+<ul>
+<li>For more information visit <a href="http://www.eugenemakerspace.com" target="_new"><i>www.eugenemakerspace.com</i></a>
+<li>Project plans and notes available at <a href="http://github.com/fractalxaos/Radmon" target="_new"><i>GitHub.com</i></a>
+</ul>
+</div>
+</div>
+<br>
+<script>
 
     function getRadmon() {
       $.ajaxSetup({cache:false, url: "dynamic/radmonData.js",
@@ -169,16 +136,11 @@
       var hourminute;
 
       timeStamp = dataItem.date;
-      if (timeStamp != "") { 
-        date = timeStamp.split(" ")[0];
-        time = timeStamp.split(" ")[1];
-        hourminute = time.split(":")[0] + ":" + time.split(":")[1];
-        $("#date").text(date);
-        $("#time").text(hourminute + " (PDT)");
-      } else {
-        $("#date").text("");
-        $("#time").text("");
-      }
+      date = timeStamp.split(" ")[0];
+      time = timeStamp.split(" ")[1];
+      hourminute = time.split(":")[0] + ":" + time.split(":")[1];
+      $("#date").text(date);
+      $("#time").text(hourminute + " (PDT)");
       
       $("#cps").text(dataItem.CPS);
       $("#cpm").text(dataItem.CPM);
