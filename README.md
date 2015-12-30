@@ -4,7 +4,7 @@ Building a simple background radiation monitor provides an excellent introductio
 
 Building the background radiation monitor will give you an excellent introduction to a variety of technologies. You will learn about programming Arduino micro-controllers and assembling electronic components. You will learn about Linux server software, scripting for Internet applications, and displaying information with a web page.
 
-You can find all the required software available under open source, GNU license at this project site. Please read the project description document for details on procuring the materials, assembling the background radiation monitor and installing the software.
+You can find all the required software available under open source, GNU license at this project site. Please read the <a href="DIY Radmon Project Description.pdf">project description document</a> for details on procuring the materials, assembling the background radiation monitor and installing the software.
 
 This project encompasses two software components. One component runs on the Arduino Uno with attached Ethernet shield. The other component runs on a Linux web server. Besides the Arduino Uno with attached Ethernet shield, the other required component is a modified Mighty Ohm Geiger counter.
 
