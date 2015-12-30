@@ -50,6 +50,7 @@ img.chart {
 <body>
 <div id="frame">
 <h2>DIY Radiation Monitor</h2>
+<h4>Located in Albany, Oregon</h4>
 <hr>
 <b>
 
@@ -108,64 +109,63 @@ Device: <text id="status"></text><br>
 <br>
 <script>
 
-    function getRadmon() {
-      $.ajaxSetup({cache:false, url: "dynamic/radmonData.js",
-        success: function(result){
-          jStr = result.slice(1,-2);
-          dataObj = JSON.parse(jStr);
-          //data = dataObj.radmon;
+  function getRadmon() {
+    $.ajaxSetup({
+      cache:false, url: "dynamic/radmonData.js", success:
+        function(result){
+          var sData, dataObj;
+          sData = result.slice(1,-1);
+          dataObj = JSON.parse(sData);
           parseRadmon(dataObj);
-        }
-      });
-      $.ajax();
-    }
+      }
+    });
+    $.ajax();
+  }
 
-    function getGraphs() {
-      document.getElementById("1-day-cpm").src = "dynamic/radGraph1.png";
-      document.getElementById("1-day-uSv").src = "dynamic/radGraph2.png";
-      document.getElementById("4-week-cpm").src = "dynamic/radGraph3.png";
-      document.getElementById("4-week-uSv").src = "dynamic/radGraph4.png";
-      document.getElementById("1-year-cpm").src = "dynamic/radGraph5.png";
-      document.getElementById("1-year-uSv").src = "dynamic/radGraph6.png";
-    }
+  function getGraphs() {
+    document.getElementById("1-day-cpm").src = "dynamic/radGraph1.png";
+    document.getElementById("1-day-uSv").src = "dynamic/radGraph2.png";
+    document.getElementById("4-week-cpm").src = "dynamic/radGraph3.png";
+    document.getElementById("4-week-uSv").src = "dynamic/radGraph4.png";
+    document.getElementById("1-year-cpm").src = "dynamic/radGraph5.png";
+    document.getElementById("1-year-uSv").src = "dynamic/radGraph6.png";
+  }
 
-    function parseRadmon(dataItem) {
-      var timeStamp
-      var date;
-      var time;
-      var hourminute;
+  function parseRadmon(dataItem) {
+    var timeStamp, date, time, hourminute;
 
-      timeStamp = dataItem.date;
-      date = timeStamp.split(" ")[0];
-      time = timeStamp.split(" ")[1];
-      hourminute = time.split(":")[0] + ":" + time.split(":")[1];
-      $("#date").text(date);
-      $("#time").text(hourminute + " (PDT)");
+    timeStamp = dataItem.date;
+    date = timeStamp.split(" ")[0];
+    time = timeStamp.split(" ")[1];
+    hourminute = time.split(":")[0] + ":" + time.split(":")[1];
+    $("#date").text(date);
+    $("#time").text(hourminute + " (PDT)");
       
-      $("#cps").text(dataItem.CPS);
-      $("#cpm").text(dataItem.CPM);
-      $("#uSvPerHr").text(dataItem.uSvPerHr);
+    $("#cps").text(dataItem.CPS);
+    $("#cpm").text(dataItem.CPM);
+    $("#uSvPerHr").text(dataItem.uSvPerHr);
+    $("#mode").text(dataItem.Mode);
 
-      sTmp = (dataItem.Mode).toLowerCase();
-      $("#mode").text(sTmp);
-
-      $("#status").text(dataItem.status);
-      if (dataItem.status == "online") {
-        document.getElementById("status").style.color = "green";
-      }
-      else {
-        document.getElementById("status").style.color = "red";
-      }
+    $("#status").text(dataItem.status);
+    if (dataItem.status == "online") {
+      document.getElementById("status").style.color = "green";
     }
+    else {
+      document.getElementById("status").style.color = "red";
+    }
+  }
 
-    $(document).ready(function() {
+  $(document).ready(
+    function() {
       getRadmon();
       getGraphs();
       setInterval(getRadmon, 10000);
       setInterval(getGraphs, 60000);
-    });
+    }
+  );
 
-  </script>
+</script>
+
 </body>
 </html>
 

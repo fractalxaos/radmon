@@ -43,7 +43,7 @@ import multiprocessing
     ### FILE AND FOLDER LOCATIONS ###
 
 _TMP_DIRECTORY = "/tmp/radmon" # folder for charts and output data file
-_RRD_FILE = "/home/{user}/database/radmonData.rrd"  # database that stores the data
+_RRD_FILE = "/home/{your user id}/database/radmonData.rrd"  # database that stores the data
 _OUTPUT_DATA_FILE = "/tmp/radmon/radmonData.js" # output file used by HTML docs
 
     ### GLOBAL CONSTANTS ###
@@ -177,8 +177,8 @@ def convertData(dData):
         local_sec = calendar.timegm(ts_utc)
         dData['UTC'] = local_sec
 
+        dData['Mode'] = dData['Mode'].lower()
         dData['uSvPerHr'] = dData.pop('uSv/hr')
-        dData['Mode'] = dData.pop('Mode').lower()
     except Exception, exError:
         print "%s convertData: %s" % (getTimeStamp(), exError)
         result = False
@@ -200,7 +200,7 @@ def writeOutputDataFile(dData):
     sData = '[{'
     for key in dData:
         sData += "\"%s\":\"%s\"," % (key, dData[key])
-    sData = sData[:-1] + '}]\n'
+    sData = sData[:-1] + '}]'
 
     # Write the string to the output data file for use by html documents.
     try:
