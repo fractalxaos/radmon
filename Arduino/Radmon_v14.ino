@@ -373,7 +373,7 @@ void listenForEthernetClients()
         sBuffer[i] = 0;
       }
       // request for JSON string response
-      if(strcmp(sBuffer, "GET /jsdata ") == 0) {
+      if(strcmp(sBuffer, "GET /rdata ") == 0) {
         iMode = 1;
       }
       // request for standard HTML document
@@ -388,20 +388,19 @@ void listenForEthernetClients()
     client.println(F("HTTP/1.1 200 OK\n"        \
                    "Content-Type: text/html\n"  \
                    "Connnection: close\n"       \
-               //  "Refresh: 10\n"              \
                    "\n"                         \
                    ));
                    
     switch (iMode) {
       case 0:
         // Respond to an invalid URL received from the client
-        client.print(F("<!DOCTYPE HTML>\n" \
-                       "<HTML><HEAD><TITLE>Radmon</TITLE></HEAD>"  \
-                       "<BODY><H2>Invalid URL</H2>"  \
-                       "<P> You have reached a server at an unknown " \
-                       "URL.  If you think you made this request in error " \
-                       "please disconnect and try your request again.</P>" \
-                       "</BODY></HTML>"));
+        client.print(F("<!DOCTYPE html>\n" \
+                       "<html><head><title>DIY Radmon</title></head>"  \
+                       "<body><h2>Invalid URL</h2>" \
+                       "<p>You have reached a server at an unknown URL.</p>" \
+                       "<p>If you think you made this call in error,<br>" \
+                       "please hangup and try your call again.</p>" \
+                       "</body></html>"));
         break;
       case 1:
         transmitJson(client);
@@ -434,33 +433,33 @@ void transmitWebPage(EthernetClient client)
    * Send the actual HTML page the user will see in their web
    * browser.
   */
-  client.print(F("<!DOCTYPE HTML>\n" \
-                 "<HTML><HEAD><TITLE>Radmon</TITLE>"  \
-                 "</HEAD><BODY><H2>Radiation Monitor</H2>" \
-                 "<P><A HREF=\"http://intravisions.com/radmon/\">" \
-                 "<I>IntraVisions.com/radmon</I></A></P>" \
-                 "<HR><FONT SIZE=\"+1\">"));
-  /* Data Items */             
-  client.print(F("<PRE>UTC&#9;"));
+  client.print(F("<!DOCTYPE html>\n" \
+                 "<html><head><title>DIY Radmon</title>"  \
+                 "<style>pre{font-size:140%;}</style>" \
+                 "</head><body><h2>DIY Radiation Monitor</h2>" \
+                 "<p><a href=\"http://intravisions.com/radmon/\">" \
+                 "<i>intravisions.com</i></a></p><hr>" \
+                 "<p><pre>UTC&#9;"));
+  /* Data Items */
   client.print(strtok(strBuffer, " "));
   client.print(F(" "));
   client.print(strtok(NULL, ", "));
-  client.print(F("<BR>"));
+  client.print(F("<br>"));
   client.print(strtok(NULL, ", "));
   client.print(F("&#9;"));
   client.print(strtok(NULL, ", "));
-  client.print(F("<BR>"));
+  client.print(F("<br>"));
   client.print(strtok(NULL, ", "));
   client.print(F("&#9;"));
   client.print(strtok(NULL, ", "));
-  client.print(F("<BR>"));
+  client.print(F("<br>"));
   client.print(strtok(NULL, ", "));
   client.print(F("&#9;"));
   client.print(strtok(NULL, ", "));
-  client.print(F("<BR>"));
+  client.print(F("<br>"));
   client.print(F("Mode&#9;"));
   client.print(strtok(NULL, ", "));
-  client.print(F("<BR></PRE></FONT></BODY></HTML>"));
+  client.print(F("<br></pre></p></body></html>"));
   return;
 }  
 
@@ -475,7 +474,7 @@ void transmitJson(EthernetClient client) {
   /*
    * Format and transmit a JSON compatible data string.
    */
-  client.print(F("[{\"radmon\":\"$,UTC="));
+  client.print(F("$,UTC="));
   client.print(strtok(strBuffer, " "));
   client.print(F(" "));
   client.print(strtok(NULL, ", "));
@@ -494,7 +493,7 @@ void transmitJson(EthernetClient client) {
   client.print(F(","));
   client.print(F("Mode="));
   client.print(strtok(NULL, ", "));
-  client.print(F(",#,\"}]"));
+  client.print(F(",#"));
   return;
 }
 

@@ -56,8 +56,10 @@ _HTTP_REQUEST_TIMEOUT = 5 # number seconds to wait for a response to HTTP reques
    ### GLOBAL VARIABLES ###
 
 webUpdateInterval = _DEFAULT_WEB_DATA_UPDATE_INTERVAL  # web update frequency
-deviceUrl = "http://192.168.1.8"  # radiation monitor network address
+deviceUrl = "{your URL}"  # radiation monitor network address
+deviceOnline = True
 debugOption = False
+
 
   ###  PRIVATE METHODS  ###
 
@@ -70,89 +72,97 @@ def getTimeStamp():
     return time.strftime( "%Y/%m/%d %T", time.localtime() )
 ##end def
 
-def sendOffLineStatusMessage():
-    """Sets the status of the the upstream device to "offline" and sends
+def setOfflineStatus(dData):
+    """Set the status of the the upstream device to "offline" and sends
        blank data to the downstream clients.
-       Parameters: none
+       Parameters:
+           dData - dictionary object containing weather data
        Returns nothing.
     """
-    sTmp = "\"date\":\"\",\"CPS\":\"\",\"CPM\":\"\"," \
-           "\"uSvPerHr\":\"\",\"Mode\":\"\",\"status\":\"offline\""
+    global deviceOnline
 
-    lsTmp = sTmp.split(',')
-    lsTmp[0] = "\"date\":\"%s\"" % getTimeStamp()
-    writeOutputDataFile(lsTmp)
+    # If the radiation monitor was previously online, then send a message
+    # that we are now offline.
+    if deviceOnline:
+        print "%s: radmon offline" % getTimeStamp()
+        deviceOnline = False
+
+    # Set data items to blank.
+    dData['UTC'] = ''
+    dData['CPM'] = ''
+    dData['CPS'] = ''
+    dData['uSvPerHr'] = ''
+    dData['Mode'] = ''
+    dData['status'] = 'offline'
+
+    writeOutputDataFile(dData)
     return
 ##end def
 
   ###  PUBLIC METHODS  ###
 
 def getRadmonData(deviceUrl, HttpRequestTimeout):
-        """Send http request to radiation monitoring device.  The response
-           from the device contains the radiation data.  The data is formatted
-           as an html document.
-        Parameters: 
-            deviceUrl - url of radiation monitoring device
-            HttpRequesttimeout - how long to wait for device
-                                 to respond to http request
-        Returns a string containing the radiation data, or None if
-        not successful.
-        """
-        content = ""
-        try:
-            conn = urllib2.urlopen(deviceUrl + "/jsdata", timeout=HttpRequestTimeout)
-        except Exception, exError:
-            # If no response is received from the device, then assume that
-            # the device is down or unavailable over the network.  In
-            # that case set the status of the device to offline.
-            print "%s: device offline: %s" % \
-                                (getTimeStamp(), exError)
-            return None
-        else:
-            for line in conn:
-                content += line.strip()
-            if len(content) == 0:
-                print "%s: HTTP download failed: null content" % \
-                    (getTimeStamp())
-                return None
-            del conn
-            return content
+    """Send http request to radiation monitoring device.  The response
+       from the device contains the radiation data.  The data is formatted
+       as an html document.
+    Parameters: 
+        deviceUrl - url of radiation monitoring device
+        HttpRequesttimeout - how long to wait for device
+                             to respond to http request
+    Returns a string containing the radiation data, or None if
+    not successful.
+    """
+    global deviceOnline
+
+    try:
+        conn = urllib2.urlopen(deviceUrl + "/rdata", timeout=HttpRequestTimeout)
+    except Exception, exError:
+        # If no response is received from the device, then assume that
+        # the device is down or unavailable over the network.  In
+        # that case set the status of the device to offline.
+        if debugOption:
+            print "getRadmonData: %s\n" % exError
+        return None
+
+    # If the radiation monitor was previously offline, then send a message
+    # that we are now online.
+    if not deviceOnline:
+        print "%s radmon online" % getTimeStamp()
+        deviceOnline = True
+
+    # Format received data into a single string.
+    content = ""
+    for line in conn:
+         content += line.strip()
+    del conn
+    return content
 ##end def
 
-def parseDataString(sData, lsData, dData):
+def parseDataString(sData, dData):
     """Parse the radiation data JSON string from the radiation 
        monitoring device into its component parts.  
        Parameters:
            sData - the string containing the data to be parsed
-          lsData - a list object to contain the parsed data items
            dData - a dictionary object to contain the parsed data items
        Returns true if successful, false otherwise.
     """
-    # Clear data array in preparation for loading reformatted data.
-    while len(lsData) > 0:
-        elmt = lsData.pop(0)
-
     try:
-        dTmp = json.loads(sData[1:-1])
-        sTmp = dTmp['radmon'].encode('ascii', 'ignore')
+        sTmp = sData[2:-2]
         lsTmp = sTmp.split(',')
-        lsData.extend(lsTmp)
     except Exception, exError:
-        print "%s parse failed: %s" % (getTimeStamp(), exError)
+        print "%s parseDataString: %s" % (getTimeStamp(), exError)
         return False
 
-    # Since the device responded, set the status to online.
-    lsData.insert(-2, "status=online")
-
     # Load the parsed data into a dictionary for easy access.
-    for item in lsData:
+    for item in lsTmp:
         if "=" in item:
             dData[item.split('=')[0]] = item.split('=')[1]
+    dData['status'] = 'online'
 
     return True
 ##end def
 
-def convertData(lsData, dData):
+def convertData(dData):
     """Convert individual radiation data items as necessary.
        Parameters:
            lsData - a list object containing the radiation data
@@ -166,46 +176,43 @@ def convertData(lsData, dData):
         ts_utc = time.strptime(dData['UTC'], "%H:%M:%S %m/%d/%Y")
         local_sec = calendar.timegm(ts_utc)
         dData['UTC'] = local_sec
-    except:
-        print "%s invalid time: %s" % (getTimeStamp(), utc)
+
+        dData['uSvPerHr'] = dData.pop('uSv/hr')
+        dData['Mode'] = dData.pop('Mode').lower()
+    except Exception, exError:
+        print "%s convertData: %s" % (getTimeStamp(), exError)
         result = False
-
-    # Clear data array in preparation for loading reformatted data.
-    while len(lsData) > 0:
-        elmt = lsData.pop(0)
-
-    lsData.append("\"UTC\":\"%s\"" % dData['UTC'])
-    lsData.append("\"CPS\":\"%s\"" % dData['CPS'])
-    lsData.append("\"CPM\":\"%s\"" % dData['CPM'])
-    lsData.append("\"uSvPerHr\":\"%s\"" % dData['uSv/hr'])
-    lsData.append("\"Mode\":\"%s\"" % dData['Mode'].lower())
-    lsData.append("\"status\":\"%s\"" % dData['status'])
 
     return result
 ##end def
 
-def writeOutputDataFile(lsData):
+def writeOutputDataFile(dData):
     """Convert individual weather string data items as necessary.
        Parameters:
            lsData - a list object containing the data to be written
                     to the JSON file
        Returns true if successful, false otherwise.
     """
-    # Convert the list object to a string.
-    sTmp = ','.join(lsData)
+    # Set date to current time and data
+    dData['date'] = getTimeStamp()
 
-    # Apply JSON formatting to the string and write it to a
-    # file for use by html documents.
-    sData = "[{%s}]\n" % (sTmp)
+    # Format the weather data as string using java script object notation.
+    sData = '[{'
+    for key in dData:
+        sData += "\"%s\":\"%s\"," % (key, dData[key])
+    sData = sData[:-1] + '}]\n'
 
+    # Write the string to the output data file for use by html documents.
     try:
         fc = open(_OUTPUT_DATA_FILE, "w")
         fc.write(sData)
         fc.close()
     except Exception, exError:
-        print "%s: write to JSON file failed: %s" % \
-                             (getTimeStamp(), exError)
+        print "%s writeOutputDataFile: %s" % (getTimeStamp(), exError)
         return False
+
+    if debugOption:
+        print sData
 
     return True
 ## end def
@@ -220,7 +227,7 @@ def updateDatabase(dData):
     Returns true if successful, false otherwise.
     """
     # The RR database stores whole units, so convert uSv to Sv.   
-    Svvalue = float(dData['uSv/hr']) * 1.0E-06 # convert micro-Sieverts to Sieverts
+    Svvalue = float(dData['uSvPerHr']) * 1.0E-06 # convert micro-Sieverts to Sieverts
 
     # Create the rrdtool update command.
     strCmd = "rrdtool update %s %s:%s:%s" % \
@@ -328,7 +335,7 @@ def main():
 
     lastChartUpdateTime = - 1 # last time charts generated
     lastDatabaseUpdateTime = -1 # last time the rrdtool database updated
-    lastWebDataUpdateTime = -1 # last time output JSON file updated
+    lastWebUpdateTime = -1 # last time output JSON file updated
     dData = {}  # dictionary object for temporary data storage
     lsData = [] # list object for temporary data storage
 
@@ -351,28 +358,27 @@ def main():
 
         # At the radiation device query interval request and process
         # the data from the device.
-        if currentTime - lastWebDataUpdateTime > webUpdateInterval:
-            llastWebDataUpdateTime = currentTime
+        if currentTime - lastWebUpdateTime > webUpdateInterval:
+            lastWebUpdateTime = currentTime
             result = True
 
             # Get the data string from the device.
             sData = getRadmonData(deviceUrl, _HTTP_REQUEST_TIMEOUT)
             if sData == None:
-                sendOffLineStatusMessage()
+                setOfflineStatus(dData)
                 result = False
 
             # If successful parse the data.
             if result:
-                result = parseDataString(sData, lsData, dData)
+                result = parseDataString(sData, dData)
 
             # If parsing successful, convert the data.
             if result:
-                result = convertData(lsData, dData)
+                result = convertData(dData)
 
             # If conversion successful, write data to output file.
             if result:
-                lsData[0] = "\"date\":\"%s\"" % getTimeStamp()
-                writeOutputDataFile(lsData)
+                writeOutputDataFile(dData)
 
         # At the rrdtool database update interval, update the database.
         if currentTime - lastDatabaseUpdateTime > _DATABASE_UPDATE_INTERVAL:   
