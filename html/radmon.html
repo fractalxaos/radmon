@@ -2,167 +2,207 @@
 <html>
 <head>
 <title>DIY Radiation</title>
-<script src="jQuery.min.js"></script>
 <style>
 body {
     background-image: url("static/chalk.jpg");
 }
-#frame {
-    width:800px;
-    text-align:center;
-    margin:auto;
+h2 {
+    font: 24px arial, sans-serif;
+    font-weight: bold;
 }
-#datetime {
-    text-align:center;
-    display:inline-block;
-    margin:1px;
-    font-size:21px;
-    color:black;
-    width:700px;
-    padding:10px;
+h4 {
+    font: 16px arial, sans-serif;
+    font-weight: bold;
 }
-div.currentdata {
-    font-size:20px;
-    display:inline-block;
-    margin:1px;
-    text-align:center;
-    color:black;
-    width:342px;
-    padding:10px;
-    border-style:solid;
-    border-width:1px;	 
+.mainContainer {
+    width: 800px;
+    text-align: center;
+    margin: auto;
+    //border: 1px solid;
 }
-div.chartitem {
-    display:inline-block;
-    text-align:left;
-    margin:1px;
-    width: 730px;
-    padding:2px;
-    border-style:solid;
-    border-width:1px;	 
+.datetime {
+    font: 19px arial, sans-serif;
+    font-weight: bold;
+    color: black;
+    padding: 10px;
+}
+.rowContainer {
+    display: table;
+    border-spacing: 1px;
+    //border: 1px solid;
+}
+.currentDataCell {
+    height: 175px;
+    width: 396px;
+    font: 19px arial, sans-serif;
+    font-weight: bold;
+    color: black;
+    text-align: center;
+    display: table-cell;
+    vertical-align: middle;
+    //border: 1px solid;
+}
+.dataItems {
+    padding: 2px;
+    text-align: left;
+    display: inline-block;
+    vertical-align: top;
+}
+.chartContainer {
+    margin: 1px;
+    padding: 2px;
+    //border: 1px solid;
 }
 img.chart {
     width:100%;
 }
+.footer {
+    font: 17px times new roman, sans-serif;
+    color: black;
+    text-align: left;
+    margin: 1px;
+    padding: 10px;
+}
 </style>
 </head>
 
-<body>
-<div id="frame">
+<body onload="main()">
+
+<div class="mainContainer">
 <h2>DIY Radiation Monitor</h2>
 <h4>Located in Albany, Oregon</h4>
-<hr>
-<b>
 
-<div id="datetime">
+<div class="datetime">
 <text id="date"></text>
 &nbsp;&nbsp;
 <text id="time"></text>
 </div>
 
-<div class="currentdata">
+<hr>
+
+<div class="rowContainer">
+<div class="currentDataCell">
 <ins>Current Reading</ins><br><br>
-Counts per minute: <text id="cpm"></text><br>
-Counts per second: <text id="cps"></text><br>
-uSv per hour: <text id="uSvPerHr"></text>
+<div class="dataItems">
+Counts per minute:<br>
+Counts per second:<br>
+uSv per hour:
+</div>
+<div class="dataItems">
+<text id="cpm"></text><br>
+<text id="cps"></text><br>
+<text id="uSvPerHr"></text>
+</div>
 </div>
 
-<div class="currentdata">
-<ins>Status</ins><br><br>
-Mode: <text id="mode"></text><br>
-Device: <text id="status"></text><br>
-&nbsp;     
+<div class="currentDataCell">
+<ins>Radiation Monitor</ins><br><br>
+<div class="dataItems">
+Device:<br>
+Mode:
+</div>
+<div class="dataItems">
+<text id="status"></text><br>
+<text id="mode"></text>
+</div>
+</div>
 </div>
 
-<div class="chartitem">
+<hr>
+
+<div class="chartContainer">
 <img class="chart" id="1-day-cpm">
 </div>
 
-<div class="chartitem">
+<div class="chartContainer">
 <img class="chart" id="1-day-uSv">
 </div>
 
-<div class="chartitem">
+<div class="chartContainer">
 <img class="chart" id="4-week-cpm">
 </div>
 
-<div class="chartitem">
+<div class="chartContainer">
 <img class="chart" id="4-week-uSv">
 </div>
 
-<div class="chartitem">
+<div class="chartContainer">
 <img class="chart" id="1-year-cpm">
 </div>
 
-<div class="chartitem">
+<div class="chartContainer">
 <img class="chart" id="1-year-uSv">
 </div>
 
-<div class="chartitem">
+<div class="footer">
 <b>NOTES:</b>
 <ul>
-<li>For more information visit <a href="http://www.eugenemakerspace.com" target="_new"><i>www.eugenemakerspace.com</i></a>
-<li>Project plans and notes available at <a href="http://github.com/fractalxaos/Radmon" target="_new"><i>GitHub.com</i></a>
+<li>DIY Radiation Monitor project plans and software available at
+<a href="https://github.com/fractalxaos/radmon" target="_new"><i>Github.com</i></a>.</li>
+<li>Project sponsored by <a href="http://www.eugenemakerspace.com" TARGET="_NEW">
+<i>Eugene Maker Space</i></a>, Eugene, Oregon.</li>
 </ul>
 </div>
 </div>
 <br>
+
 <script>
 
-  function getRadmon() {
-    $.ajaxSetup({
-      cache:false, url: "dynamic/radmonData.js", success:
-        function(result){
-          var sData, dataObj;
-          sData = result.slice(1,-1);
-          dataObj = JSON.parse(sData);
-          parseRadmon(dataObj);
+/* Globals */
+var radmonDataUrl = "dynamic/radmonData.js";
+var httpRequest = new XMLHttpRequest();
+
+function main() {
+    getRadmonData();
+    getRadmonGraphs();
+    setInterval(getRadmonData, 10000);
+    setInterval(getRadmonGraphs, 60000);
+}
+
+function getRadmonData() {
+    httpRequest.onreadystatechange = function() {
+        if (httpRequest.readyState == 4 && httpRequest.status == 200) {
+            var dataArray = JSON.parse(httpRequest.responseText);
+            displayData(dataArray[0]);
         }
-    });
-    $.ajax();
-  }
+    };
+    httpRequest.open("GET", radmonDataUrl, true);
+    httpRequest.send();
+}
 
-  function getGraphs() {
-    document.getElementById("1-day-cpm").src = "dynamic/radGraph1.png";
-    document.getElementById("1-day-uSv").src = "dynamic/radGraph2.png";
-    document.getElementById("4-week-cpm").src = "dynamic/radGraph3.png";
-    document.getElementById("4-week-uSv").src = "dynamic/radGraph4.png";
-    document.getElementById("1-year-cpm").src = "dynamic/radGraph5.png";
-    document.getElementById("1-year-uSv").src = "dynamic/radGraph6.png";
-  }
+function getRadmonGraphs() {
+    var d = new Date;
+    document.getElementById("1-day-cpm").src = "dynamic/radGraph1.png?ver=" + d.getTime();
+    document.getElementById("1-day-uSv").src = "dynamic/radGraph2.png?ver=" + d.getTime();
+    document.getElementById("4-week-cpm").src = "dynamic/radGraph3.png?ver=" + d.getTime();
+    document.getElementById("4-week-uSv").src = "dynamic/radGraph4.png?ver=" + d.getTime();
+    document.getElementById("1-year-cpm").src = "dynamic/radGraph5.png?ver=" + d.getTime();
+    document.getElementById("1-year-uSv").src = "dynamic/radGraph6.png?ver=" + d.getTime();
+}
 
-  function parseRadmon(dataItem) {
+function displayData(dataItem) {
     var timeStamp, date, time, hourminute;
 
     timeStamp = dataItem.date;
     date = timeStamp.split(" ")[0];
     time = timeStamp.split(" ")[1];
     hourminute = time.split(":")[0] + ":" + time.split(":")[1];
-    $("#date").text(date);
-    $("#time").text(hourminute + " (PDT)");
-      
-    $("#cps").text(dataItem.CPS);
-    $("#cpm").text(dataItem.CPM);
-    $("#uSvPerHr").text(dataItem.uSvPerHr);
-    $("#mode").text(dataItem.Mode);
+    
+    document.getElementById("date").innerHTML = date;    
+    document.getElementById("time").innerHTML = hourminute + " (PDT)";    
+    document.getElementById("cpm").innerHTML =  dataItem.CPM;    
+    document.getElementById("cps").innerHTML =  dataItem.CPS;    
+    document.getElementById("uSvPerHr").innerHTML =  dataItem.uSvPerHr;    
+    document.getElementById("mode").innerHTML =  dataItem.Mode;    
 
-    $("#status").text(dataItem.status);
+    document.getElementById("status").innerHTML =  dataItem.status;    
     if (dataItem.status == "online") {
-      document.getElementById("status").style.color = "green";
+        document.getElementById("status").style.color = "green";
     }
     else {
-      document.getElementById("status").style.color = "red";
+        document.getElementById("status").style.color = "red";
     }
-  }
-
-  $(document).ready(
-    function() {
-      getRadmon();
-      getGraphs();
-      setInterval(getRadmon, 10000);
-      setInterval(getGraphs, 60000);
-    }
-  );
+}
 
 </script>
 
