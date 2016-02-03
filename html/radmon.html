@@ -7,12 +7,10 @@ body {
     background-image: url("static/chalk.jpg");
 }
 h2 {
-    font: 24px arial, sans-serif;
-    font-weight: bold;
+    font: bold 24px arial, sans-serif;
 }
 h4 {
-    font: 16px arial, sans-serif;
-    font-weight: bold;
+    font: bold 16px arial, sans-serif;
 }
 .mainContainer {
     width: 800px;
@@ -20,21 +18,16 @@ h4 {
     margin: auto;
 }
 .datetime {
-    font: 19px arial, sans-serif;
-    font-weight: bold;
-    color: black;
-    padding: 10px;
+    font: bold 22px arial, sans-serif;
+    padding: 20px;
 }
 .rowContainer {
     display: table;
-    border-spacing: 1px;
+    width: 100%;
 }
 .currentDataCell {
-    height: 175px;
-    width: 396px;
-    font: 19px arial, sans-serif;
-    font-weight: bold;
-    color: black;
+    width: 50%;
+    font: bold 20px arial, sans-serif;
     text-align: center;
     display: table-cell;
     vertical-align: middle;
@@ -42,21 +35,19 @@ h4 {
 .dataItems {
     padding: 2px;
     text-align: left;
+    line-height: 130%;
     display: inline-block;
     vertical-align: top;
 }
 .chartContainer {
-    margin: 1px;
     padding: 2px;
 }
 img.chart {
     width:100%;
 }
-.footer {
-    font: 17px times new roman, sans-serif;
-    color: black;
+.notes {
+    font: 17px arial, sans-serif;
     text-align: left;
-    margin: 1px;
     padding: 10px;
 }
 </style>
@@ -65,16 +56,15 @@ img.chart {
 <body onload="main()">
 
 <div class="mainContainer">
+
 <h2>DIY Radiation Monitor</h2>
-<h4>Located in Albany, Oregon</h4>
+<h4>Albany, Oregon</h4>
 
 <div class="datetime">
 <text id="date"></text>
 &nbsp;&nbsp;
 <text id="time"></text>
 </div>
-
-<hr>
 
 <div class="rowContainer">
 <div class="currentDataCell">
@@ -104,7 +94,7 @@ Mode:
 </div>
 </div>
 
-<hr>
+<br>
 
 <div class="chartContainer">
 <img class="chart" id="1-day-cpm">
@@ -130,13 +120,16 @@ Mode:
 <img class="chart" id="1-year-uSv">
 </div>
 
-<div class="footer">
+<div class="notes">
 <b>NOTES:</b>
 <ul>
 <li>DIY Radiation Monitor project plans and software available at
 <a href="https://github.com/fractalxaos/radmon" target="_new"><i>Github.com</i></a>.</li>
 <li>Project sponsored by <a href="http://www.eugenemakerspace.com" TARGET="_NEW">
 <i>Eugene Maker Space</i></a>, Eugene, Oregon.</li>
+<li>For more information about the effects of radiation on the human body see
+<a href="https://xkcd.com/radiation/" target="_blank">
+Radiation Dose Chart</a> by Randall Monroe.</li>
 </ul>
 </div>
 </div>
@@ -177,26 +170,29 @@ function getRadmonGraphs() {
 }
 
 function displayData(dataItem) {
-    var timeStamp, date, time, hourminute;
+    var timeStamp, date, time, hourminute, status;
 
     timeStamp = dataItem.date;
     date = timeStamp.split(" ")[0];
     time = timeStamp.split(" ")[1];
     hourminute = time.split(":")[0] + ":" + time.split(":")[1];
+    localDateObj = new Date();
+    localTimeZone = localDateObj.getTimezoneOffset() / 60;
     
     document.getElementById("date").innerHTML = date;    
-    document.getElementById("time").innerHTML = hourminute + " (PDT)";    
+    document.getElementById("time").innerHTML =  
+        hourminute + "  <small>(GMT+" + localTimeZone + ")</small>";    
     document.getElementById("cpm").innerHTML =  dataItem.CPM;    
     document.getElementById("cps").innerHTML =  dataItem.CPS;    
     document.getElementById("uSvPerHr").innerHTML =  dataItem.uSvPerHr;    
     document.getElementById("mode").innerHTML =  dataItem.Mode;    
 
-    document.getElementById("status").innerHTML =  dataItem.status;    
-    if (dataItem.status == "online") {
-        document.getElementById("status").style.color = "green";
-    }
-    else {
-        document.getElementById("status").style.color = "red";
+    status = dataItem.status;
+    document.getElementById("status").innerHTML = status;    
+    if (status == "online") {
+       document.getElementById("status").style.color = "green";
+    } else {
+       document.getElementById("status").style.color = "red";
     }
 }
 
