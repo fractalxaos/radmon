@@ -155,7 +155,7 @@ function getRadmonData() {
             displayData(dataArray[0]);
         }
     };
-    httpRequest.open("GET", radmonDataUrl, true);
+    httpRequest.open("POST", radmonDataUrl, true);
     httpRequest.send();
 }
 
