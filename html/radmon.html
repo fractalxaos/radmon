@@ -13,7 +13,7 @@ h4 {
     font: bold 16px arial, sans-serif;
 }
 .mainContainer {
-    width: 800px;
+    width: 750px;
     text-align: center;
     margin: auto;
 }
@@ -49,6 +49,31 @@ img.chart {
     font: 17px arial, sans-serif;
     text-align: left;
     padding: 10px;
+}
+span.chartNav {
+    margin: auto;
+}
+ul.chartNav {
+    list-style-type: none;
+    margin: 10px;
+    padding: 0;
+    overflow: hidden;
+    background-color: #bbb;
+    text-align: center;
+}
+li.chartNav {
+    display: inline-block;
+    font: bold 18px arial, sans-serif;
+    color: black;
+}
+text.chartNav:hover {
+    background-color: #333;
+    cursor: pointer;
+    color: white;
+}
+text.chartNav {
+    display: inline-block;
+    padding: 8px 12px;
 }
 </style>
 </head>
@@ -94,30 +119,22 @@ Mode:
 </div>
 </div>
 
+<span class="chartNav">
+<ul class="chartNav">
+<li class="chartNav">Select charts:</li>
+<li class="chartNav"><text class="chartNav" onclick="show_charts(1)">24 hours</text></li>
+<li class="chartNav"><text class="chartNav" onclick="show_charts(2)">4 weeks</text></li>
+<li class="chartNav"><text class="chartNav" onclick="show_charts(3)">12 months</text></li>
+</ul>
+</span>
 <br>
 
 <div class="chartContainer">
-<img class="chart" id="1-day-cpm">
+<img class="chart" id="cpmChart">
 </div>
 
 <div class="chartContainer">
-<img class="chart" id="1-day-uSv">
-</div>
-
-<div class="chartContainer">
-<img class="chart" id="4-week-cpm">
-</div>
-
-<div class="chartContainer">
-<img class="chart" id="4-week-uSv">
-</div>
-
-<div class="chartContainer">
-<img class="chart" id="1-year-cpm">
-</div>
-
-<div class="chartContainer">
-<img class="chart" id="1-year-uSv">
+<img class="chart" id="uSvChart">
 </div>
 
 <div class="notes">
@@ -140,12 +157,12 @@ Radiation Dose Chart</a> by Randall Monroe.</li>
 /* Globals */
 var radmonDataUrl = "dynamic/radmonData.js";
 var httpRequest = new XMLHttpRequest();
+var graphPeriod;
 
 function main() {
     getRadmonData();
-    getRadmonGraphs();
+    show_charts(1);
     setInterval(getRadmonData, 10000);
-    setInterval(getRadmonGraphs, 60000);
 }
 
 function getRadmonData() {
@@ -159,14 +176,34 @@ function getRadmonData() {
     httpRequest.send();
 }
 
+function show_charts(n) {
+    graphPeriod = n;
+    getRadmonGraphs();   
+    setInterval(getRadmonGraphs, 60000);
+}
+
 function getRadmonGraphs() {
     var d = new Date;
-    document.getElementById("1-day-cpm").src = "dynamic/radGraph1.png?ver=" + d.getTime();
-    document.getElementById("1-day-uSv").src = "dynamic/radGraph2.png?ver=" + d.getTime();
-    document.getElementById("4-week-cpm").src = "dynamic/radGraph3.png?ver=" + d.getTime();
-    document.getElementById("4-week-uSv").src = "dynamic/radGraph4.png?ver=" + d.getTime();
-    document.getElementById("1-year-cpm").src = "dynamic/radGraph5.png?ver=" + d.getTime();
-    document.getElementById("1-year-uSv").src = "dynamic/radGraph6.png?ver=" + d.getTime();
+    switch(graphPeriod) {
+        case 1:
+            document.getElementById("cpmChart").src =
+                "dynamic/radGraph1.png?ver=" + d.getTime();
+            document.getElementById("uSvChart").src = 
+                "dynamic/radGraph2.png?ver=" + d.getTime();
+            break;
+        case 2:
+            document.getElementById("cpmChart").src = 
+                "dynamic/radGraph3.png?ver=" + d.getTime();
+            document.getElementById("uSvChart").src = 
+                "dynamic/radGraph4.png?ver=" + d.getTime();
+            break;
+       case 3:
+            document.getElementById("cpmChart").src = 
+                "dynamic/radGraph5.png?ver=" + d.getTime();
+            document.getElementById("uSvChart").src = 
+                "dynamic/radGraph6.png?ver=" + d.getTime();
+            break;
+    }
 }
 
 function displayData(dataItem) {

@@ -42,8 +42,9 @@ import multiprocessing
 
     ### FILE AND FOLDER LOCATIONS ###
 
+_USER = os.environ['USER']
 _TMP_DIRECTORY = "/tmp/radmon" # folder for charts and output data file
-_RRD_FILE = "/home/{your user id}/database/radmonData.rrd"  # database that stores the data
+_RRD_FILE = "/home/%s/database/radmonData.rrd" % _USER # database that stores the data
 _OUTPUT_DATA_FILE = "/tmp/radmon/radmonData.js" # output file used by HTML docs
 
     ### GLOBAL CONSTANTS ###
@@ -52,11 +53,13 @@ _DEFAULT_WEB_DATA_UPDATE_INTERVAL = 10
 _CHART_UPDATE_INTERVAL = 60 # defines how often the charts get updated
 _DATABASE_UPDATE_INTERVAL = 30 # defines how often the database gets updated
 _HTTP_REQUEST_TIMEOUT = 5 # number seconds to wait for a response to HTTP request
+_CHART_WIDTH = 600
+_CHART_HEIGHT = 150
 
    ### GLOBAL VARIABLES ###
 
 webUpdateInterval = _DEFAULT_WEB_DATA_UPDATE_INTERVAL  # web update frequency
-deviceUrl = "{your URL}"  # radiation monitor network address
+deviceUrl = "http://73.157.139.23:4371"  # radiation monitor network address
 deviceOnline = True
 debugOption = False
 
@@ -211,7 +214,7 @@ def writeOutputDataFile(dData):
         print "%s writeOutputDataFile: %s" % (getTimeStamp(), exError)
         return False
 
-    if debugOption:
+    if debugOption and 0:
         print sData
 
     return True
@@ -247,7 +250,7 @@ def updateDatabase(dData):
     return True
 ##end def
 
-def createGraph(fileName, dataItem, gTitle, gStart):
+def createGraph(fileName, dataItem, gLabel, gTitle, gStart, lower, upper, addTrend):
     """Uses rrdtool to create a graph of specified weather data item.
        Parameters:
            fileName - name of graph image file
@@ -257,30 +260,52 @@ def createGraph(fileName, dataItem, gTitle, gStart):
        Returns true if successful, false otherwise.
     """
     gPath = _TMP_DIRECTORY + '/' + fileName + ".png"
+    trendWindow = { 'end-1day': 7200,
+                    'end-4weeks': 172800,
+                    'end-12months': 604800 }
+ 
+    # Format the rrdtool graph command.
 
-    # Create the rrdtool graph command.
-    strFmt = ("rrdtool graph %s -a PNG -s %s -w 600 -h 150 "
-                           ##  "-l 50 -u 110 -r "
-                               "-v %s -t %s "
-                               "DEF:%s=%s:%s:AVERAGE "
-                               "LINE2:%s\#0400ff:")         
-    strCmd = strFmt % (gPath, gStart, dataItem, gTitle, dataItem, \
-                       _RRD_FILE, dataItem, dataItem)
+    # Set chart start time, height, and width.
+    strCmd = "rrdtool graph %s -a PNG -s %s -e now -w %s -h %s " \
+             % (gPath, gStart, _CHART_WIDTH, _CHART_HEIGHT)
+   
+    # Set the range of the chart ordinate dataum.
+    if lower < upper:
+        strCmd  +=  "-l %s -u %s " % (lower, upper)
+    else:
+        #strCmd += "-A -Y "
+        strCmd += "-Y "
+
+    # Set the chart ordinate label and chart title. 
+    strCmd += "-v %s -t %s " % (gLabel, gTitle)
+
+    # Show the data, or a moving average trend line over
+    # the data, or both.
+    strCmd += "DEF:%s=%s:%s:AVERAGE " % (dataItem, _RRD_FILE, dataItem)
+
+    if addTrend == 0 or addTrend == 2:
+        strCmd += "LINE1:%s\#0400ff " % (dataItem)
+    if addTrend == 1 or addTrend == 2:
+        strCmd += "CDEF:smoothed=%s,%s,TREND LINE1:smoothed#ff0000" \
+                  % (dataItem, trendWindow[gStart])
+       
     if debugOption:
         print "%s\n" % strCmd # DEBUG
     
-    # Run the command as a subprocess.
+    # Run the formatted rrdtool command as a subprocess.
     try:
-        result = subprocess.check_output(strCmd, stderr=subprocess.STDOUT, \
+        result = subprocess.check_output(strCmd, \
+                     stderr=subprocess.STDOUT,   \
                      shell=True)
     except subprocess.CalledProcessError, exError:
-        print "rdtool graph failed: %s" % (exError.output)
+        print "rrdtool graph failed: %s" % (exError.output)
         return False
 
     if debugOption:
         print "rrdtool graph: %s" % result
-
     return True
+
 ##end def
 
 def getCLarguments():
@@ -318,12 +343,12 @@ def generateGraphs():
        Parameters: none
        Returns nothing.
     """
-    createGraph('radGraph1', 'CPM', "'CPM - Last 24 Hours'", 'end-1day')
-    createGraph('radGraph2', 'SvperHr', "'Sv/Hr - Last 24 Hours'", 'end-1day')
-    createGraph('radGraph3', 'CPM', "'CPM - Last 4 Weeks'", 'end-4weeks')
-    createGraph('radGraph4', 'SvperHr', "'Sv/Hr - Last 4 Weeks'", 'end-4weeks')
-    createGraph('radGraph5', 'CPM', "'CPM - Past Year'", 'end-12months')
-    createGraph('radGraph6', 'SvperHr', "'Sv/Hr - Past Year'", 'end-12months')
+    createGraph('radGraph1', 'CPM', "'counts per minute'", "'CPM - Last 24 Hours'", 'end-1day', 0, 0, 2)
+    createGraph('radGraph2', 'SvperHr', "'Sv per hour'", "'Sv/Hr - Last 24 Hours'", 'end-1day', 0, 0, 2)
+    createGraph('radGraph3', 'CPM', "'counts per minute'", "'CPM - Last 4 Weeks'", 'end-4weeks', 0, 0, 2)
+    createGraph('radGraph4', 'SvperHr', "'Sv per hour'", "'Sv/Hr - Last 4 Weeks'", 'end-4weeks', 0, 0, 2)
+    createGraph('radGraph5', 'CPM', "'counts per minute'", "'CPM - Past Year'", 'end-12months', 0, 0, 2)
+    createGraph('radGraph6', 'SvperHr', "'Sv per hour'", "'Sv/Hr - Past Year'", 'end-12months', 0, 0, 2)
 ##end def
 
 def main():
