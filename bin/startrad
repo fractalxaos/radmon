@@ -1,7 +1,8 @@
 #!/bin/bash
 #
-APP_PATH="/home/{user}/bin"
-LOG_PATH="/home/{user}/log"
+
+APP_PATH="/home/$USER/bin"
+LOG_PATH="/home/$USER/log"
 
 PROCESS_ID="$(ps x | awk '/[r]admonAgent.py/{print $1}')"
 
@@ -12,5 +13,5 @@ if [ -n "$PROCESS_ID" ]; then
 else
   printf "starting up radmon agent\n"
   cd $APP_PATH
-  ./radmonAgent.py -t 10 -u 'http://73.157.139.23:4371/jsdata' >> $LOG_PATH/radmonAgent.log 2>&1 &
+  ./radmonAgent.py -t 10 -u 'http://73.157.139.23:4371' >> $LOG_PATH/radmonAgent.log 2>&1 &
 fi

@@ -32,8 +32,10 @@ import subprocess
 
     ### DEFINE FILE LOCATIONS ###
 
-_RRD_FILE = "/home/{user}/database/radmonData.rrd"  # the file that stores the data
+_USER = os.environ['USER']
+_RRD_FILE = "/home/%s/database/radmonData.rrd" % _USER  # the file that stores the data
 _RRD_SIZE_IN_DAYS = 370 # days
+_1YR_RRA_STEPS_PER_DAY = 96
 _DATABASE_UPDATE_INTERVAL = 30
 
 def createRrdFile():
@@ -46,21 +48,19 @@ def createRrdFile():
         print "rrdtool radiation database file already exists"
         return True
 
-    dbUpdateInterval = _DATABASE_UPDATE_INTERVAL  # rrd update step in seconds
-    rrd1yearSteps = 30 # steps per day for longer time periods
-
-    dataItemEpochTime = long(time.mktime(time.localtime())) 
-    rrdfileStartTime = dataItemEpochTime - 10
-    heartBeat = 2 * dbUpdateInterval
-    rrd24hrRows = int(86400 / dbUpdateInterval)
-    rrd1yearRows = int(3600 * 24 * _RRD_SIZE_IN_DAYS / (dbUpdateInterval * rrd1yearSteps))
+     ## Calculate database size
+ 
+    heartBeat = 2 * _DATABASE_UPDATE_INTERVAL
+    rra1yrNumPDP =  int(round(86400 / (_1YR_RRA_STEPS_PER_DAY * _DATABASE_UPDATE_INTERVAL)))
+    rrd24hrNumRows = int(round(86400 / _DATABASE_UPDATE_INTERVAL))
+    rrd1yearNumRows = _1YR_RRA_STEPS_PER_DAY * _RRD_SIZE_IN_DAYS
        
-    strFmt = ("rrdtool create %s --start %s --step %s "
+    strFmt = ("rrdtool create %s --step %s "
                "DS:CPM:GAUGE:%s:U:U DS:SvperHr:GAUGE:%s:U:U "
                "RRA:AVERAGE:0.5:1:%s RRA:AVERAGE:0.5:%s:%s")
 
-    strCmd = strFmt % (_RRD_FILE, rrdfileStartTime, dbUpdateInterval, \
-                heartBeat, heartBeat, rrd24hrRows, rrd1yearSteps, rrd1yearRows)
+    strCmd = strFmt % (_RRD_FILE, _DATABASE_UPDATE_INTERVAL, \
+                heartBeat, heartBeat, rrd24hrNumRows, rra1yrNumPDP, rrd1yearNumRows)
 
     print "creating rrdtool radiation database...\n\n%s\n" % strCmd
 
