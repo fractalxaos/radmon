@@ -282,7 +282,7 @@ def createGraph(fileName, dataItem, gLabel, gTitle, gStart, lower, upper, addTre
 
     # Show the data, or a moving average trend line over
     # the data, or both.
-    strCmd += "DEF:%s=%s:%s:AVERAGE " % (dataItem, _RRD_FILE, dataItem)
+    strCmd += "DEF:%s=%s:%s:LAST " % (dataItem, _RRD_FILE, dataItem)
 
     if addTrend == 0 or addTrend == 2:
         strCmd += "LINE1:%s\#0400ff " % (dataItem)

@@ -57,7 +57,7 @@ def createRrdFile():
        
     strFmt = ("rrdtool create %s --step %s "
                "DS:CPM:GAUGE:%s:U:U DS:SvperHr:GAUGE:%s:U:U "
-               "RRA:AVERAGE:0.5:1:%s RRA:AVERAGE:0.5:%s:%s")
+               "RRA:LAST:0.5:1:%s RRA:LAST:0.5:%s:%s")
 
     strCmd = strFmt % (_RRD_FILE, _DATABASE_UPDATE_INTERVAL, \
                 heartBeat, heartBeat, rrd24hrNumRows, rra1yrNumPDP, rrd1yearNumRows)
