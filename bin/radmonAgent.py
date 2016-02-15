@@ -59,7 +59,7 @@ _CHART_HEIGHT = 150
    ### GLOBAL VARIABLES ###
 
 webUpdateInterval = _DEFAULT_WEB_DATA_UPDATE_INTERVAL  # web update frequency
-deviceUrl = "http://73.157.139.23:4371"  # radiation monitor network address
+deviceUrl = "{your device url}"  # radiation monitor network address
 deviceOnline = True
 debugOption = False
 
