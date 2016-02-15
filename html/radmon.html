@@ -159,6 +159,19 @@ var radmonDataUrl = "dynamic/radmonData.js";
 var httpRequest = new XMLHttpRequest();
 var graphPeriod;
 
+/* Chart elements */
+var cpmChart_g = document.getElementById("cpmChart");
+var uSvChart_g = document.getElementById("uSvChart");
+
+/* Text elements */
+var date_e = document.getElementById("date");    
+var time_e = document.getElementById("time"); 
+var cpm_e = document.getElementById("cpm");    
+var cps_e = document.getElementById("cps");    
+var uSvPerHr_e = document.getElementById("uSvPerHr");    
+var mode_e = document.getElementById("mode");    
+var status_e = document.getElementById("status");    
+
 function main() {
     getRadmonData();
     show_charts(1);
@@ -184,30 +197,26 @@ function show_charts(n) {
 
 function getRadmonGraphs() {
     var d = new Date;
+
     switch(graphPeriod) {
         case 1:
-            document.getElementById("cpmChart").src =
-                "dynamic/radGraph1.png?ver=" + d.getTime();
-            document.getElementById("uSvChart").src = 
-                "dynamic/radGraph2.png?ver=" + d.getTime();
+            cpmChart_g.src = "dynamic/radGraph1.png?ver=" + d.getTime();
+            uSvChart_g.src = "dynamic/radGraph2.png?ver=" + d.getTime();
             break;
         case 2:
-            document.getElementById("cpmChart").src = 
-                "dynamic/radGraph3.png?ver=" + d.getTime();
-            document.getElementById("uSvChart").src = 
-                "dynamic/radGraph4.png?ver=" + d.getTime();
+            cpmChart_g.src = "dynamic/radGraph3.png?ver=" + d.getTime();
+            uSvChart_g.src = "dynamic/radGraph4.png?ver=" + d.getTime();
             break;
        case 3:
-            document.getElementById("cpmChart").src = 
-                "dynamic/radGraph5.png?ver=" + d.getTime();
-            document.getElementById("uSvChart").src = 
-                "dynamic/radGraph6.png?ver=" + d.getTime();
+            cpmChart_g.src = "dynamic/radGraph5.png?ver=" + d.getTime();
+            uSvChart_g.src = "dynamic/radGraph6.png?ver=" + d.getTime();
             break;
     }
 }
 
 function displayData(dataItem) {
-    var timeStamp, date, time, hourminute, status;
+    var timeStamp, date, time, hourminute;
+    var localDateObj,localTimeZone;
 
     timeStamp = dataItem.date;
     date = timeStamp.split(" ")[0];
@@ -216,20 +225,18 @@ function displayData(dataItem) {
     localDateObj = new Date();
     localTimeZone = localDateObj.getTimezoneOffset() / 60;
     
-    document.getElementById("date").innerHTML = date;    
-    document.getElementById("time").innerHTML =  
-        hourminute + "  <small>(GMT+" + localTimeZone + ")</small>";    
-    document.getElementById("cpm").innerHTML =  dataItem.CPM;    
-    document.getElementById("cps").innerHTML =  dataItem.CPS;    
-    document.getElementById("uSvPerHr").innerHTML =  dataItem.uSvPerHr;    
-    document.getElementById("mode").innerHTML =  dataItem.Mode;    
+    date_e.innerHTML = date;    
+    time_e.innerHTML = hourminute + "  <small>(GMT+" + localTimeZone + ")</small>";    
+    cpm_e.innerHTML = dataItem.CPM;    
+    cps_e.innerHTML = dataItem.CPS;    
+    uSvPerHr_e.innerHTML = dataItem.uSvPerHr;    
+    mode_e.innerHTML = dataItem.Mode;    
 
-    status = dataItem.status;
-    document.getElementById("status").innerHTML = status;    
-    if (status == "online") {
-       document.getElementById("status").style.color = "green";
+    status_e.innerHTML = dataItem.status;    
+    if (dataItem.status == "online") {
+       status_e.style.color = "green";
     } else {
-       document.getElementById("status").style.color = "red";
+       status_e.style.color = "red";
     }
 }
 
