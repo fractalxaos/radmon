@@ -50,7 +50,7 @@ _OUTPUT_DATA_FILE = "/tmp/radmon/radmonData.js" # output file used by HTML docs
     ### GLOBAL CONSTANTS ###
 
 _DEFAULT_WEB_DATA_UPDATE_INTERVAL = 10
-_CHART_UPDATE_INTERVAL = 60 # defines how often the charts get updated
+_CHART_UPDATE_INTERVAL = 300 # defines how often the charts get updated
 _DATABASE_UPDATE_INTERVAL = 30 # defines how often the database gets updated
 _HTTP_REQUEST_TIMEOUT = 5 # number seconds to wait for a response to HTTP request
 _CHART_WIDTH = 600
@@ -59,7 +59,7 @@ _CHART_HEIGHT = 150
    ### GLOBAL VARIABLES ###
 
 webUpdateInterval = _DEFAULT_WEB_DATA_UPDATE_INTERVAL  # web update frequency
-deviceUrl = {your device URL}  # radiation monitor network address
+deviceUrl = "http://73.157.139.23:4371"  # radiation monitor network address
 deviceOnline = True
 debugOption = False
 
@@ -405,12 +405,11 @@ def main():
             if result:
                 writeOutputDataFile(dData)
 
-        # At the rrdtool database update interval, update the database.
-        if currentTime - lastDatabaseUpdateTime > _DATABASE_UPDATE_INTERVAL:   
-            lastDatabaseUpdateTime = currentTime
-            if result:
-                ## Update the round robin database with the parsed data.
-                result = updateDatabase(dData)
+                # At the rrdtool database update interval, update the database.
+                if currentTime - lastDatabaseUpdateTime > _DATABASE_UPDATE_INTERVAL:   
+                    lastDatabaseUpdateTime = currentTime
+                    ## Update the round robin database with the parsed data.
+                    result = updateDatabase(dData)
 
         # At the chart generation interval, generate charts.
         if currentTime - lastChartUpdateTime > _CHART_UPDATE_INTERVAL:
