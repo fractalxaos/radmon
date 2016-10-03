@@ -49,19 +49,22 @@ _OUTPUT_DATA_FILE = "/tmp/radmon/radmonData.js" # output file used by HTML docs
 
     ### GLOBAL CONSTANTS ###
 
-_DEFAULT_WEB_DATA_UPDATE_INTERVAL = 10
+_DEFAULT_DATA_REQUEST_INTERVAL = 10 # interval between data requests to radiation monitor
 _CHART_UPDATE_INTERVAL = 300 # defines how often the charts get updated
 _DATABASE_UPDATE_INTERVAL = 30 # defines how often the database gets updated
 _HTTP_REQUEST_TIMEOUT = 5 # number seconds to wait for a response to HTTP request
+_MAX_RADIATION_MONITOR_OFFLINE_COUNT = 3 # max number of failed data requests allowed
 _CHART_WIDTH = 600
 _CHART_HEIGHT = 150
+_DEFAULT_RADIATION_MONITOR_URL = "{your radiation monitor url}"
 
    ### GLOBAL VARIABLES ###
 
-webUpdateInterval = _DEFAULT_WEB_DATA_UPDATE_INTERVAL  # web update frequency
-deviceUrl = "{your device url}"  # radiation monitor network address
-deviceOnline = True
 debugOption = False
+radiationMonitorOnline = True
+radiationMonitorOfflineCount = 0
+dataRequestInterval = _DEFAULT_DATA_REQUEST_INTERVAL  # web update frequency
+radiationMonitorUrl = _DEFAULT_RADIATION_MONITOR_URL  # radiation monitor network address
 
 
   ###  PRIVATE METHODS  ###
@@ -72,7 +75,7 @@ def getTimeStamp():
     Parameters: none
     Returns string containing the time stamp.
     """
-    return time.strftime( "%Y/%m/%d %T", time.localtime() )
+    return time.strftime( "%m/%d/%Y %T", time.localtime() )
 ##end def
 
 def setOfflineStatus(dData):
@@ -82,13 +85,18 @@ def setOfflineStatus(dData):
            dData - dictionary object containing weather data
        Returns nothing.
     """
-    global deviceOnline
+    global radiationMonitorOnline, radiationMonitorOfflineCount
+
+    radiationMonitorOfflineCount += 1
+
+    if radiationMonitorOfflineCount < _MAX_RADIATION_MONITOR_OFFLINE_COUNT:
+        return
 
     # If the radiation monitor was previously online, then send a message
     # that we are now offline.
-    if deviceOnline:
-        print "%s: radmon offline" % getTimeStamp()
-        deviceOnline = False
+    if radiationMonitorOnline:
+        print "%s: radiation monitor offline" % getTimeStamp()
+        radiationMonitorOnline = False
 
     # Set data items to blank.
     dData['UTC'] = ''
@@ -104,40 +112,48 @@ def setOfflineStatus(dData):
 
   ###  PUBLIC METHODS  ###
 
-def getRadmonData(deviceUrl, HttpRequestTimeout):
+def getRadiationData():
     """Send http request to radiation monitoring device.  The response
        from the device contains the radiation data.  The data is formatted
        as an html document.
     Parameters: 
-        deviceUrl - url of radiation monitoring device
+        radiationMonitorUrl - url of radiation monitoring device
         HttpRequesttimeout - how long to wait for device
                              to respond to http request
     Returns a string containing the radiation data, or None if
     not successful.
     """
-    global deviceOnline
+    global radiationMonitorOnline, radiationMonitorOfflineCount
 
     try:
-        conn = urllib2.urlopen(deviceUrl + "/rdata", timeout=HttpRequestTimeout)
+        conn = urllib2.urlopen(radiationMonitorUrl + "/rdata",
+                               timeout=_HTTP_REQUEST_TIMEOUT)
+
+        # Format received data into a single string.
+        content = ""
+        for line in conn:
+            content += line.strip()
+        del conn
+
     except Exception, exError:
         # If no response is received from the device, then assume that
         # the device is down or unavailable over the network.  In
         # that case set the status of the device to offline.
         if debugOption:
-            print "getRadmonData: %s\n" % exError
+            print "http error: %s" % exError
         return None
+
+    radiationMonitorOfflineCount = 0
 
     # If the radiation monitor was previously offline, then send a message
     # that we are now online.
-    if not deviceOnline:
-        print "%s radmon online" % getTimeStamp()
-        deviceOnline = True
+    if not radiationMonitorOnline:
+        print "%s radiation monitor online" % getTimeStamp()
+        radiationMonitorOnline = True
 
-    # Format received data into a single string.
-    content = ""
-    for line in conn:
-         content += line.strip()
-    del conn
+    if debugOption:
+        print "http request successful"
+        #print content
     return content
 ##end def
 
@@ -236,7 +252,7 @@ def updateDatabase(dData):
     strCmd = "rrdtool update %s %s:%s:%s" % \
                        (_RRD_FILE, dData['UTC'], dData['CPM'], Svvalue)
     if debugOption:
-        print "%s\n" % strCmd # DEBUG
+        print "%s" % strCmd # DEBUG
 
     # Run the command as a subprocess.
     try:
@@ -250,13 +266,22 @@ def updateDatabase(dData):
     return True
 ##end def
 
-def createGraph(fileName, dataItem, gLabel, gTitle, gStart, lower, upper, addTrend):
+def createGraph(fileName, dataItem, gLabel, gTitle, gStart,
+                lower, upper, addTrend, autoScale):
     """Uses rrdtool to create a graph of specified weather data item.
        Parameters:
            fileName - name of graph image file
            dataItem - data item to be graphed
-           gTitle - a title for the graph
-           gStart - beginning time of the data to be graphed
+           gLabel - string containing a graph label for the data item
+           gTitle - string containing a title for the graph
+           lower - lower bound for graph ordinate #NOT USED
+           upper - upper bound for graph ordinate #NOT USED
+           addTrend - 0, show only graph data
+                      1, show only a trend line
+                      2, show a trend line and the graph data
+           autoScale - if True, then use vertical axis auto scaling
+               (lower and upper parameters are ignored), otherwise use
+               lower and upper parameters to set vertical axis scale
        Returns true if successful, false otherwise.
     """
     gPath = _TMP_DIRECTORY + '/' + fileName + ".png"
@@ -270,26 +295,29 @@ def createGraph(fileName, dataItem, gLabel, gTitle, gStart, lower, upper, addTre
     strCmd = "rrdtool graph %s -a PNG -s %s -e now -w %s -h %s " \
              % (gPath, gStart, _CHART_WIDTH, _CHART_HEIGHT)
    
-    # Set the range of the chart ordinate dataum.
+    # Set the range and scaling of the chart y-axis.
     if lower < upper:
-        strCmd  +=  "-l %s -u %s " % (lower, upper)
-    else:
-        #strCmd += "-A -Y "
-        strCmd += "-Y "
+        strCmd  +=  "-l %s -u %s -r " % (lower, upper)
+    elif autoScale:
+        strCmd += "-A "
+    strCmd += "-Y "
 
     # Set the chart ordinate label and chart title. 
     strCmd += "-v %s -t %s " % (gLabel, gTitle)
-
+ 
     # Show the data, or a moving average trend line over
     # the data, or both.
-    strCmd += "DEF:%s=%s:%s:LAST " % (dataItem, _RRD_FILE, dataItem)
-
-    if addTrend == 0 or addTrend == 2:
-        strCmd += "LINE1:%s\#0400ff " % (dataItem)
-    if addTrend == 1 or addTrend == 2:
-        strCmd += "CDEF:smoothed=%s,%s,TREND LINE1:smoothed#ff0000" \
-                  % (dataItem, trendWindow[gStart])
-       
+    strCmd += "DEF:dSeries=%s:%s:LAST " % (_RRD_FILE, dataItem)
+    if addTrend == 0:
+        strCmd += "LINE1:dSeries#0400ff "
+    elif addTrend == 1:
+        strCmd += "CDEF:smoothed=dSeries,%s,TREND LINE3:smoothed#ff0000 " \
+                  % trendWindow[gStart]
+    elif addTrend == 2:
+        strCmd += "LINE1:dSeries#0400ff "
+        strCmd += "CDEF:smoothed=dSeries,%s,TREND LINE3:smoothed#ff0000 " \
+                  % trendWindow[gStart]
+     
     if debugOption:
         print "%s\n" % strCmd # DEBUG
     
@@ -308,6 +336,27 @@ def createGraph(fileName, dataItem, gLabel, gTitle, gStart, lower, upper, addTre
 
 ##end def
 
+def generateGraphs():
+    """Generate graphs for display in html documents.
+       Parameters: none
+       Returns nothing.
+    """
+    autoScale = False
+
+    createGraph('radGraph1', 'CPM', 'counts\ per\ minute', 
+                'CPM\ -\ Last\ 24\ Hours', 'end-1day', 0, 0, 2, autoScale)
+    createGraph('radGraph2', 'SvperHr', 'Sv\ per\ hour',
+                'Sv/Hr\ -\ Last\ 24\ Hours', 'end-1day', 0, 0, 2, autoScale)
+    createGraph('radGraph3', 'CPM', 'counts\ per\ minute',
+                'CPM\ -\ Last\ 4\ Weeks', 'end-4weeks', 0, 0, 2, autoScale)
+    createGraph('radGraph4', 'SvperHr', 'Sv\ per\ hour',
+                'Sv/Hr\ -\ Last\ 4\ Weeks', 'end-4weeks', 0, 0, 2, autoScale)
+    createGraph('radGraph5', 'CPM', 'counts\ per\ minute',
+                'CPM\ -\ Past\ Year', 'end-12months', 0, 0, 2, autoScale)
+    createGraph('radGraph6', 'SvperHr', 'Sv\ per\ hour',
+                'Sv/Hr\ -\ Past\ Year', 'end-12months', 0, 0, 2, autoScale)
+##end def
+
 def getCLarguments():
     """Get command line arguments.  There are three possible arguments
           -d turns on debug mode
@@ -315,7 +364,7 @@ def getCLarguments():
           -u sets the url of the radiation monitoring device
        Returns nothing.
     """
-    global debugOption, webUpdateInterval, deviceUrl
+    global debugOption, dataRequestInterval, radiationMonitorUrl
 
     index = 1
     while index < len(sys.argv):
@@ -323,32 +372,19 @@ def getCLarguments():
             debugOption = True
         elif sys.argv[index] == '-t':
             try:
-                webUpdateInterval = abs(int(sys.argv[index + 1]))
+                dataRequestInterval = abs(int(sys.argv[index + 1]))
             except:
                 print "invalid polling period"
                 exit(-1)
             index += 1
         elif sys.argv[index] == '-u':
-            deviceUrl = sys.argv[index + 1]
+            radiationMonitorUrl = sys.argv[index + 1]
             index += 1
         else:
             cmd_name = sys.argv[0].split('/')
-            print "Usage: %s {-v} {-d}" % cmd_name[-1]
+            print "Usage: %s [-d] [-t seconds] [-u url}" % cmd_name[-1]
             exit(-1)
         index += 1
-##end def
-
-def generateGraphs():
-    """Generate graphs for display in html documents.
-       Parameters: none
-       Returns nothing.
-    """
-    createGraph('radGraph1', 'CPM', "'counts per minute'", "'CPM - Last 24 Hours'", 'end-1day', 0, 0, 2)
-    createGraph('radGraph2', 'SvperHr', "'Sv per hour'", "'Sv/Hr - Last 24 Hours'", 'end-1day', 0, 0, 2)
-    createGraph('radGraph3', 'CPM', "'counts per minute'", "'CPM - Last 4 Weeks'", 'end-4weeks', 0, 0, 2)
-    createGraph('radGraph4', 'SvperHr', "'Sv per hour'", "'Sv/Hr - Last 4 Weeks'", 'end-4weeks', 0, 0, 2)
-    createGraph('radGraph5', 'CPM', "'counts per minute'", "'CPM - Past Year'", 'end-12months', 0, 0, 2)
-    createGraph('radGraph6', 'SvperHr', "'Sv per hour'", "'Sv/Hr - Past Year'", 'end-12months', 0, 0, 2)
 ##end def
 
 def main():
@@ -358,11 +394,10 @@ def main():
        Returns nothing.
     """
 
+    lastDataRequestTime = -1 # last time output JSON file updated
     lastChartUpdateTime = - 1 # last time charts generated
     lastDatabaseUpdateTime = -1 # last time the rrdtool database updated
-    lastWebUpdateTime = -1 # last time output JSON file updated
     dData = {}  # dictionary object for temporary data storage
-    lsData = [] # list object for temporary data storage
 
     ## Get command line arguments.
     getCLarguments()
@@ -371,24 +406,25 @@ def main():
     if not os.path.isdir(_TMP_DIRECTORY):
         os.makedirs(_TMP_DIRECTORY)
 
-    ## Exit with error if cannot find the rrdtool database file.
+    ## Exit with error if rrdtool database does not exist.
     if not os.path.exists(_RRD_FILE):
-        print "cannot find rrdtool database file: terminating"
+        print "cannot find rrdtool database\nuse createWeatherRrd script to" \
+              " create rrdtool database\n"
         exit(1)
  
     ## main loop
     while True:
 
-        currentTime = time.time()
+        currentTime = time.time() # get current time in seconds
 
-        # At the radiation device query interval request and process
-        # the data from the device.
-        if currentTime - lastWebUpdateTime > webUpdateInterval:
-            lastWebUpdateTime = currentTime
+        # Every web update interval request data from the radiation
+        # monitor and process the received data.
+        if currentTime - lastDataRequestTime > dataRequestInterval:
+            lastDataRequestTime = currentTime
             result = True
 
             # Get the data string from the device.
-            sData = getRadmonData(deviceUrl, _HTTP_REQUEST_TIMEOUT)
+            sData = getRadiationData()
             if sData == None:
                 setOfflineStatus(dData)
                 result = False
@@ -422,12 +458,12 @@ def main():
 
         elapsedTime = time.time() - currentTime
         if debugOption:
-            print "web update: %6f sec\n" % elapsedTime
-        remainingTime = webUpdateInterval - elapsedTime
-        if remainingTime > 0:
+            print "processing time: %6f sec\n" % elapsedTime
+        remainingTime = dataRequestInterval - elapsedTime
+        if remainingTime > 0.0:
             time.sleep(remainingTime)
-             
     ## end while
+    return
 ## end def
 
 if __name__ == '__main__':
