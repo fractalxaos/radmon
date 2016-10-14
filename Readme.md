@@ -10,7 +10,7 @@
 
 <p>This project encompasses two software components. One component runs on the Arduino Uno with attached Ethernet shield. The other component runs on a Linux web server. Besides the Arduino Uno with attached Ethernet shield, the other required component is a modified Mighty Ohm Geiger counter.</p>
 
-<img src="MtyOhmGeigerCounter.jpg"><br>
+<img src="RadiationMonitor.jpg"><br>
 <b>Radiation monitor electronics assembly mounted in box.</b>
 <br>
 </body>
