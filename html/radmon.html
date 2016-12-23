@@ -200,16 +200,16 @@ function getRadmonGraphs() {
 
     switch(graphPeriod) {
         case 1:
-            cpmChart_g.src = "dynamic/radGraph1.png?ver=" + d.getTime();
-            uSvChart_g.src = "dynamic/radGraph2.png?ver=" + d.getTime();
+            cpmChart_g.src = "dynamic/24hr_cpm.png?ver=" + d.getTime();
+            uSvChart_g.src = "dynamic/24hr_svperhr.png?ver=" + d.getTime();
             break;
         case 2:
-            cpmChart_g.src = "dynamic/radGraph3.png?ver=" + d.getTime();
-            uSvChart_g.src = "dynamic/radGraph4.png?ver=" + d.getTime();
+            cpmChart_g.src = "dynamic/4wk_cpm.png?ver=" + d.getTime();
+            uSvChart_g.src = "dynamic/4wk_svperhr.png?ver=" + d.getTime();
             break;
        case 3:
-            cpmChart_g.src = "dynamic/radGraph5.png?ver=" + d.getTime();
-            uSvChart_g.src = "dynamic/radGraph6.png?ver=" + d.getTime();
+            cpmChart_g.src = "dynamic/12m_cpm.png?ver=" + d.getTime();
+            uSvChart_g.src = "dynamic/12m_svperhr.png?ver=" + d.getTime();
             break;
     }
 }

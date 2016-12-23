@@ -31,18 +31,24 @@
 # Revision History
 #   * v20 released 15 Sep 2015 by J L Owrey
 #
+
+import os
 import urllib2
+import sys   
+import subprocess
+import multiprocessing
 import time
 import calendar
-import subprocess
-import sys
-import os
-import json
-import multiprocessing
+
+_USER = os.environ['USER']
+
+   ### DEFAULT WEATHER STATION URL ###
+
+_DEFAULT_RADIATION_MONITOR_URL = "{your weather station url}"
+_DATA_FORWARDING_FILE = "/home/%s/public_html/radmon/dynamic/rad.dat" % _USER
 
     ### FILE AND FOLDER LOCATIONS ###
 
-_USER = os.environ['USER']
 _TMP_DIRECTORY = "/tmp/radmon" # folder for charts and output data file
 _RRD_FILE = "/home/%s/database/radmonData.rrd" % _USER # database that stores the data
 _OUTPUT_DATA_FILE = "/tmp/radmon/radmonData.js" # output file used by HTML docs
@@ -50,13 +56,12 @@ _OUTPUT_DATA_FILE = "/tmp/radmon/radmonData.js" # output file used by HTML docs
     ### GLOBAL CONSTANTS ###
 
 _DEFAULT_DATA_REQUEST_INTERVAL = 10 # interval between data requests to radiation monitor
-_CHART_UPDATE_INTERVAL = 300 # defines how often the charts get updated
+_CHART_UPDATE_INTERVAL = 300 # defines how often the charts get updated in seconds
 _DATABASE_UPDATE_INTERVAL = 30 # defines how often the database gets updated
-_HTTP_REQUEST_TIMEOUT = 5 # number seconds to wait for a response to HTTP request
-_MAX_RADIATION_MONITOR_OFFLINE_COUNT = 3 # max number of failed data requests allowed
+_HTTP_REQUEST_TIMEOUT = 3 # number seconds to wait for a response to HTTP request
+_MAX_RADIATION_MONITOR_OFFLINE_COUNT = 2 # max number of failed data requests allowed
 _CHART_WIDTH = 600
 _CHART_HEIGHT = 150
-_DEFAULT_RADIATION_MONITOR_URL = "{your radiation monitor url}"
 
    ### GLOBAL VARIABLES ###
 
@@ -126,7 +131,7 @@ def getRadiationData():
     global radiationMonitorOnline, radiationMonitorOfflineCount
 
     try:
-        conn = urllib2.urlopen(radiationMonitorUrl + "/rdata",
+        conn = urllib2.urlopen(radiationMonitorUrl,
                                timeout=_HTTP_REQUEST_TIMEOUT)
 
         # Format received data into a single string.
@@ -152,8 +157,9 @@ def getRadiationData():
         radiationMonitorOnline = True
 
     if debugOption:
-        print "http request successful"
         #print content
+        pass
+
     return content
 ##end def
 
@@ -235,6 +241,22 @@ def writeOutputDataFile(dData):
 
     return True
 ## end def
+
+def writeForwardingFile(sData):
+    """Write weather station response string to a forwarding file for use
+       by down stream servers that mirror this site.
+    """
+    # Write the string to the output data file for use by html documents.
+    try:
+        fc = open(_DATA_FORWARDING_FILE, "w")
+        fc.write(sData)
+        fc.close()
+    except Exception, exError:
+        print "%s writeOutputDataFile: %s" % (getTimeStamp(), exError)
+        return False
+
+    return True
+##end def
 
 def updateDatabase(dData):
     """
@@ -343,17 +365,17 @@ def generateGraphs():
     """
     autoScale = False
 
-    createGraph('radGraph1', 'CPM', 'counts\ per\ minute', 
+    createGraph('24hr_cpm', 'CPM', 'counts\ per\ minute', 
                 'CPM\ -\ Last\ 24\ Hours', 'end-1day', 0, 0, 2, autoScale)
-    createGraph('radGraph2', 'SvperHr', 'Sv\ per\ hour',
+    createGraph('24hr_svperhr', 'SvperHr', 'Sv\ per\ hour',
                 'Sv/Hr\ -\ Last\ 24\ Hours', 'end-1day', 0, 0, 2, autoScale)
-    createGraph('radGraph3', 'CPM', 'counts\ per\ minute',
+    createGraph('4wk_cpm', 'CPM', 'counts\ per\ minute',
                 'CPM\ -\ Last\ 4\ Weeks', 'end-4weeks', 0, 0, 2, autoScale)
-    createGraph('radGraph4', 'SvperHr', 'Sv\ per\ hour',
+    createGraph('4wk_svperhr', 'SvperHr', 'Sv\ per\ hour',
                 'Sv/Hr\ -\ Last\ 4\ Weeks', 'end-4weeks', 0, 0, 2, autoScale)
-    createGraph('radGraph5', 'CPM', 'counts\ per\ minute',
+    createGraph('12m_cpm', 'CPM', 'counts\ per\ minute',
                 'CPM\ -\ Past\ Year', 'end-12months', 0, 0, 2, autoScale)
-    createGraph('radGraph6', 'SvperHr', 'Sv\ per\ hour',
+    createGraph('12m_svperhr', 'SvperHr', 'Sv\ per\ hour',
                 'Sv/Hr\ -\ Past\ Year', 'end-12months', 0, 0, 2, autoScale)
 ##end def
 
@@ -439,7 +461,10 @@ def main():
 
             # If conversion successful, write data to output file.
             if result:
+                writeForwardingFile(sData)
                 writeOutputDataFile(dData)
+                if debugOption:
+                    print "http request successful"
 
                 # At the rrdtool database update interval, update the database.
                 if currentTime - lastDatabaseUpdateTime > _DATABASE_UPDATE_INTERVAL:   
