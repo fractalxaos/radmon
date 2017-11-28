@@ -1,18 +1,19 @@
 #!/usr/bin/python -u
-## The -u option above turns off block buffering of python output. This assures
-## that each error message gets individually printed to the log file.
+## The -u option above turns off block buffering of python output. This 
+## assures that each error message gets individually printed to the log file.
 #
 # Module: radmonAgent.py
 #
-# Description: This module acts as an agent between the radiation monitoring device
-# and the Internet web server.  The agent periodically sends an http request to the
-# radiation monitoring device and processes the response from the device and performs
-# a number of operations:
+# Description: This module acts as an agent between the radiation monitoring
+# device and the Internet web server.  The agent periodically sends an http
+# request to the radiation monitoring device and processes the response from
+# the device and performs a number of operations:
 #     - conversion of data items
 #     - update a round robin (rrdtool) database with the radiation data
 #     - periodically generate graphic charts for display in html documents
 #     - forward the radiation data to other services
-#     - write the processed weather data to a JSON file for use by html documents
+#     - write the processed weather data to a JSON file for use by html
+#       documents
 #
 # Copyright 2015 Jeff Owrey
 #    This program is free software: you can redistribute it and/or modify
@@ -29,8 +30,11 @@
 #    along with this program.  If not, see http://www.gnu.org/license.
 #
 # Revision History
-#   * v20 released 15 Sep 2015 by J L Owrey
+#   * v20 released 15 Sep 2015 by J L Owrey; first release
+#   * v21 released 27 Nov 2017 by J L Owrey; bug fixes; updates
 #
+
+_MIRROR_SERVER = True
 
 import os
 import urllib2
@@ -44,32 +48,54 @@ _USER = os.environ['USER']
 
    ### DEFAULT WEATHER STATION URL ###
 
-_DEFAULT_RADIATION_MONITOR_URL = "{your weather station url}"
-_DATA_FORWARDING_FILE = "/home/%s/public_html/radmon/dynamic/rad.dat" % _USER
+if _MIRROR_SERVER:
+    _DEFAULT_RADIATION_MONITOR_URL = \
+        "http://73.157.139.23:7361/~pi/radmon/dynamic/rad.dat"
+else:
+    _DEFAULT_RADIATION_MONITOR_URL = "http://192.168.1.8"
 
     ### FILE AND FOLDER LOCATIONS ###
 
-_TMP_DIRECTORY = "/tmp/radmon" # folder for charts and output data file
-_RRD_FILE = "/home/%s/database/radmonData.rrd" % _USER # database that stores the data
-_OUTPUT_DATA_FILE = "/tmp/radmon/radmonData.js" # output file used by HTML docs
+# folder for containing dynamic data objects
+_DYNAMIC_FOLDER_PATH = "/home/%s/public_html/radmon/dynamic/" % _USER
+# folder for charts and output data file
+_CHARTS_DIRECTORY = _DYNAMIC_FOLDER_PATH
+ # database that stores weather data
+_RRD_FILE = "/home/%s/database/radmonData.rrd" % _USER
+# location of data output file
+_OUTPUT_DATA_FILE = _DYNAMIC_FOLDER_PATH + "radmonData.js"
+# location of data forwarding file
+_DATA_FORWARDING_FILE = _DYNAMIC_FOLDER_PATH + "rad.dat"
 
     ### GLOBAL CONSTANTS ###
-
-_DEFAULT_DATA_REQUEST_INTERVAL = 10 # interval between data requests to radiation monitor
-_CHART_UPDATE_INTERVAL = 300 # defines how often the charts get updated in seconds
-_DATABASE_UPDATE_INTERVAL = 30 # defines how often the database gets updated
-_HTTP_REQUEST_TIMEOUT = 3 # number seconds to wait for a response to HTTP request
-_MAX_RADIATION_MONITOR_OFFLINE_COUNT = 2 # max number of failed data requests allowed
+# interval in seconds between data requests to radiation monitor
+_DEFAULT_DATA_REQUEST_INTERVAL = 5
+# defines how often the charts get updated in seconds
+_CHART_UPDATE_INTERVAL = 300
+# defines how often the database gets updated
+_DATABASE_UPDATE_INTERVAL = 30
+# number seconds to wait for a response to HTTP request
+_HTTP_REQUEST_TIMEOUT = 3
+# max number of failed data requests allowed
+_MAX_RADIATION_MONITOR_OFFLINE_COUNT = 2
+# radmon chart dimensions
 _CHART_WIDTH = 600
 _CHART_HEIGHT = 150
 
    ### GLOBAL VARIABLES ###
 
+# turn on or off of verbose debugging information
 debugOption = False
+# online status of radiation monitor
 radiationMonitorOnline = True
+# number of unsuccessful http requests
 radiationMonitorOfflineCount = 0
-dataRequestInterval = _DEFAULT_DATA_REQUEST_INTERVAL  # web update frequency
-radiationMonitorUrl = _DEFAULT_RADIATION_MONITOR_URL  # radiation monitor network address
+# status of reset command to radiation monitor
+remoteDeviceReset = False
+# web update frequency
+dataRequestInterval = _DEFAULT_DATA_REQUEST_INTERVAL
+# radiation monitor network address
+radiationMonitorUrl = _DEFAULT_RADIATION_MONITOR_URL
 
 
   ###  PRIVATE METHODS  ###
@@ -101,14 +127,13 @@ def setOfflineStatus(dData):
     # that we are now offline.
     if radiationMonitorOnline:
         print "%s: radiation monitor offline" % getTimeStamp()
+        if os.path.exists(_DATA_FORWARDING_FILE):
+            os.remove(_DATA_FORWARDING_FILE)
         radiationMonitorOnline = False
 
-    # Set data items to blank.
-    dData['UTC'] = ''
-    dData['CPM'] = ''
-    dData['CPS'] = ''
-    dData['uSvPerHr'] = ''
-    dData['Mode'] = ''
+    for key in dData:
+        dData[key] = ''
+
     dData['status'] = 'offline'
 
     writeOutputDataFile(dData)
@@ -128,11 +153,20 @@ def getRadiationData():
     Returns a string containing the radiation data, or None if
     not successful.
     """
-    global radiationMonitorOnline, radiationMonitorOfflineCount
+    global radiationMonitorOnline, radiationMonitorOfflineCount, \
+           remoteDeviceReset
+
+    sUrl = radiationMonitorUrl
+
+    if not _MIRROR_SERVER:
+        if remoteDeviceReset:
+            sUrl += "/reset"
+            remoteDeviceReset = False
+        else:
+            sUrl += "/rdata"
 
     try:
-        conn = urllib2.urlopen(radiationMonitorUrl,
-                               timeout=_HTTP_REQUEST_TIMEOUT)
+        conn = urllib2.urlopen(sUrl, timeout=_HTTP_REQUEST_TIMEOUT)
 
         # Format received data into a single string.
         content = ""
@@ -197,13 +231,26 @@ def convertData(dData):
     result = True
  
     try:
-        # Convert UTC from radiation monitoring device to local time.
+
+        # Uncomment below to use timestamp from radiation monitoring device
+        # otherwise the requesting server (this) will generate the
+        # timestamp. Allowing the server to generate the timestamp
+        # prevents timestamp errors due to the radiation monitoring device
+        # failing to synchronize with a NTP time server.
+
+        #dData['UTC'] = time.time()
+
+        ## Convert UTC from radiation monitoring device to local time.
         ts_utc = time.strptime(dData['UTC'], "%H:%M:%S %m/%d/%Y")
         local_sec = calendar.timegm(ts_utc)
         dData['UTC'] = local_sec
-
+        
         dData['Mode'] = dData['Mode'].lower()
-        dData['uSvPerHr'] = dData.pop('uSv/hr')
+ 
+        dData['uSvPerHr'] = float(dData.pop('uSv/hr'))
+        
+        dData['CPM'] = int(dData.pop('CPM'))
+
     except Exception, exError:
         print "%s convertData: %s" % (getTimeStamp(), exError)
         result = False
@@ -243,9 +290,6 @@ def writeOutputDataFile(dData):
 ## end def
 
 def writeForwardingFile(sData):
-    """Write weather station response string to a forwarding file for use
-       by down stream servers that mirror this site.
-    """
     # Write the string to the output data file for use by html documents.
     try:
         fc = open(_DATA_FORWARDING_FILE, "w")
@@ -267,8 +311,11 @@ def updateDatabase(dData):
                         written to the rr database file
     Returns true if successful, false otherwise.
     """
-    # The RR database stores whole units, so convert uSv to Sv.   
-    Svvalue = float(dData['uSvPerHr']) * 1.0E-06 # convert micro-Sieverts to Sieverts
+    global remoteDeviceReset
+
+    # The RR database stores whole units, so convert uSv to Sv.
+    #Svvalue = float(dData['uSvPerHr']) * 1.0E-06
+    Svvalue = dData['uSvPerHr'] * 1.0E-06 
 
     # Create the rrdtool update command.
     strCmd = "rrdtool update %s %s:%s:%s" % \
@@ -283,6 +330,11 @@ def updateDatabase(dData):
     except subprocess.CalledProcessError, exError:
         print "%s: rrdtool update failed: %s" % \
                                  (getTimeStamp(), exError.output)
+        if exError.output.find("illegal attempt to update using time") > -1:
+            remoteDeviceReset = True
+            print "%s: rebooting radiation monitor" % \
+                                 (getTimeStamp())
+
         return False
 
     return True
@@ -306,7 +358,7 @@ def createGraph(fileName, dataItem, gLabel, gTitle, gStart,
                lower and upper parameters to set vertical axis scale
        Returns true if successful, false otherwise.
     """
-    gPath = _TMP_DIRECTORY + '/' + fileName + ".png"
+    gPath = _CHARTS_DIRECTORY + fileName + ".png"
     trendWindow = { 'end-1day': 7200,
                     'end-4weeks': 172800,
                     'end-12months': 604800 }
@@ -410,23 +462,24 @@ def getCLarguments():
 ##end def
 
 def main():
-    """Handles timing of events and acts as executive routine managing all other
-       functions.
+    """Handles timing of events and acts as executive routine managing
+       all other functions.
        Parameters: none
        Returns nothing.
     """
 
-    lastDataRequestTime = -1 # last time output JSON file updated
-    lastChartUpdateTime = - 1 # last time charts generated
-    lastDatabaseUpdateTime = -1 # last time the rrdtool database updated
-    dData = {}  # dictionary object for temporary data storage
+    # last time output JSON file updated
+    lastDataRequestTime = -1
+    # last time charts generated
+    lastChartUpdateTime = - 1
+    # last time the rrdtool database updated
+    lastDatabaseUpdateTime = -1
+
+    # define empty dictionary object for radmon data
+    dData = {}
 
     ## Get command line arguments.
     getCLarguments()
-
-    ## Create www data folder if it does not already exist.
-    if not os.path.isdir(_TMP_DIRECTORY):
-        os.makedirs(_TMP_DIRECTORY)
 
     ## Exit with error if rrdtool database does not exist.
     if not os.path.exists(_RRD_FILE):
@@ -453,6 +506,7 @@ def main():
 
             # If successful parse the data.
             if result:
+                dData = {}
                 result = parseDataString(sData, dData)
 
             # If parsing successful, convert the data.
@@ -467,7 +521,8 @@ def main():
                     print "http request successful"
 
                 # At the rrdtool database update interval, update the database.
-                if currentTime - lastDatabaseUpdateTime > _DATABASE_UPDATE_INTERVAL:   
+                if currentTime - lastDatabaseUpdateTime > \
+                        _DATABASE_UPDATE_INTERVAL:   
                     lastDatabaseUpdateTime = currentTime
                     ## Update the round robin database with the parsed data.
                     result = updateDatabase(dData)
