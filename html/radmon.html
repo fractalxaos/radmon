@@ -82,7 +82,9 @@ text.chartNav {
 
 <div class="mainContainer">
 
-<h2>DIY Radiation Monitor</h2>
+<h2><a href="https://github.com/fractalxaos/radmon" 
+style="text-decoration:none" target="_new">
+DIY Radiation Monitor</a></h2>
 <h4>Albany, Oregon</h4>
 
 <div class="datetime">
@@ -109,7 +111,7 @@ uSv per hour:
 <div class="currentDataCell">
 <ins>Radiation Monitor</ins><br><br>
 <div class="dataItems">
-Device:<br>
+Status:<br>
 Mode:
 </div>
 <div class="dataItems">
@@ -122,9 +124,12 @@ Mode:
 <span class="chartNav">
 <ul class="chartNav">
 <li class="chartNav">Select charts:</li>
-<li class="chartNav"><text class="chartNav" onclick="show_charts(1)">24 hours</text></li>
-<li class="chartNav"><text class="chartNav" onclick="show_charts(2)">4 weeks</text></li>
-<li class="chartNav"><text class="chartNav" onclick="show_charts(3)">12 months</text></li>
+<li class="chartNav"><text class="chartNav" onclick="show_charts(1)">
+24 hours</text></li>
+<li class="chartNav"><text class="chartNav" onclick="show_charts(2)">
+4 weeks</text></li>
+<li class="chartNav"><text class="chartNav" onclick="show_charts(3)">
+12 months</text></li>
 </ul>
 </span>
 <br>
@@ -141,11 +146,13 @@ Mode:
 <b>NOTES:</b>
 <ul>
 <li>DIY Radiation Monitor project plans and software available at
-<a href="https://github.com/fractalxaos/radmon" target="_new"><i>Github.com</i></a>.</li>
-<li>Project sponsored by <a href="http://www.eugenemakerspace.com" TARGET="_NEW">
+<a href="https://github.com/fractalxaos/radmon" target="_new">
+<i>Github.com</i></a>.</li>
+<li>Project sponsored by 
+<a href="http://www.eugenemakerspace.com" TARGET="_NEW">
 <i>Eugene Maker Space</i></a>, Eugene, Oregon.</li>
-<li>For more information about the effects of radiation on the human body see
-<a href="https://xkcd.com/radiation/" target="_blank">
+<li>For more information about the effects of radiation on the human body
+see <a href="https://xkcd.com/radiation/" target="_blank">
 Radiation Dose Chart</a> by Randall Monroe.</li>
 </ul>
 </div>
@@ -155,7 +162,7 @@ Radiation Dose Chart</a> by Randall Monroe.</li>
 <script>
 
 /* Globals */
-var radmonDataUrl = "dynamic/radmonData.js";
+var radmonDataUrl = "dynamic/radmonOutputData.js";
 var httpRequest = new XMLHttpRequest();
 var graphPeriod;
 
@@ -175,7 +182,7 @@ var status_e = document.getElementById("status");
 function main() {
     getRadmonData();
     show_charts(1);
-    setInterval(getRadmonData, 10000);
+    setInterval(getRadmonData, 5000);
 }
 
 function getRadmonData() {
@@ -226,7 +233,8 @@ function displayData(dataItem) {
     localTimeZone = localDateObj.getTimezoneOffset() / 60;
     
     date_e.innerHTML = date;    
-    time_e.innerHTML = hourminute + "  <small>(GMT+" + localTimeZone + ")</small>";    
+    time_e.innerHTML = hourminute +
+        "  <small>(GMT+" + localTimeZone + ")</small>";    
     cpm_e.innerHTML = dataItem.CPM;    
     cps_e.innerHTML = dataItem.CPS;    
     uSvPerHr_e.innerHTML = dataItem.uSvPerHr;    

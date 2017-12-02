@@ -34,7 +34,7 @@
 #   * v21 released 27 Nov 2017 by J L Owrey; bug fixes; updates
 #
 
-_MIRROR_SERVER = True
+_MIRROR_SERVER = False
 
 import os
 import urllib2
@@ -48,24 +48,24 @@ _USER = os.environ['USER']
 
    ### DEFAULT WEATHER STATION URL ###
 
-if _MIRROR_SERVER:
-    _DEFAULT_RADIATION_MONITOR_URL = \
-        "http://73.157.139.23:7361/~pi/radmon/dynamic/rad.dat"
-else:
-    _DEFAULT_RADIATION_MONITOR_URL = "http://192.168.1.8"
+# ip address of radiation monitoring device
+_RADIATION_MONITOR_URL = "http://YOUR_RADIATION_MONITOR_IP_ADDRESS"
+# url if this is a mirror server
+_PRIMARY_SERVER_URL = \
+    "http://YOUR_PRIMARY_SERVER/USER/radmon/dynamic/radmonInputData.dat"
 
     ### FILE AND FOLDER LOCATIONS ###
 
 # folder for containing dynamic data objects
-_DYNAMIC_FOLDER_PATH = "/home/%s/public_html/radmon/dynamic/" % _USER
+_DOCROOT_PATH = "/home/%s/public_html/radmon/" % _USER
 # folder for charts and output data file
-_CHARTS_DIRECTORY = _DYNAMIC_FOLDER_PATH
+_CHARTS_DIRECTORY = _DOCROOT_PATH + "dynamic/"
  # database that stores weather data
 _RRD_FILE = "/home/%s/database/radmonData.rrd" % _USER
+# location of data input file
+INPUT_DATA_FILE = _DOCROOT_PATH + "dynamic/radmonInputData.dat"
 # location of data output file
-_OUTPUT_DATA_FILE = _DYNAMIC_FOLDER_PATH + "radmonData.js"
-# location of data forwarding file
-_DATA_FORWARDING_FILE = _DYNAMIC_FOLDER_PATH + "rad.dat"
+_OUTPUT_DATA_FILE = _DOCROOT_PATH + "dynamic/radmonOutputData.js"
 
     ### GLOBAL CONSTANTS ###
 # interval in seconds between data requests to radiation monitor
@@ -92,11 +92,10 @@ radiationMonitorOnline = True
 radiationMonitorOfflineCount = 0
 # status of reset command to radiation monitor
 remoteDeviceReset = False
+# ip address of radiation monitor
+radiationMonitorUrl = _RADIATION_MONITOR_URL
 # web update frequency
 dataRequestInterval = _DEFAULT_DATA_REQUEST_INTERVAL
-# radiation monitor network address
-radiationMonitorUrl = _DEFAULT_RADIATION_MONITOR_URL
-
 
   ###  PRIVATE METHODS  ###
 
@@ -127,8 +126,8 @@ def setOfflineStatus(dData):
     # that we are now offline.
     if radiationMonitorOnline:
         print "%s: radiation monitor offline" % getTimeStamp()
-        if os.path.exists(_DATA_FORWARDING_FILE):
-            os.remove(_DATA_FORWARDING_FILE)
+        if os.path.exists(INPUT_DATA_FILE):
+            os.remove(INPUT_DATA_FILE)
         radiationMonitorOnline = False
 
     for key in dData:
@@ -156,14 +155,12 @@ def getRadiationData():
     global radiationMonitorOnline, radiationMonitorOfflineCount, \
            remoteDeviceReset
 
-    sUrl = radiationMonitorUrl
-
-    if not _MIRROR_SERVER:
-        if remoteDeviceReset:
-            sUrl += "/reset"
-            remoteDeviceReset = False
-        else:
-            sUrl += "/rdata"
+    if _MIRROR_SERVER:
+        sUrl = _PRIMARY_SERVER_URL
+    elif remoteDeviceReset:
+        sUrl = radiationMonitorUrl + "/reset"
+    else:
+        sUrl = radiationMonitorUrl + "/rdata"
 
     try:
         conn = urllib2.urlopen(sUrl, timeout=_HTTP_REQUEST_TIMEOUT)
@@ -190,10 +187,7 @@ def getRadiationData():
         print "%s radiation monitor online" % getTimeStamp()
         radiationMonitorOnline = True
 
-    if debugOption:
-        #print content
-        pass
-
+    #print content
     return content
 ##end def
 
@@ -217,6 +211,11 @@ def parseDataString(sData, dData):
         if "=" in item:
             dData[item.split('=')[0]] = item.split('=')[1]
     dData['status'] = 'online'
+
+    if len(dData) != 6:
+        print "%s parse failed: corrupted data string: %s" % \
+               (getTimeStamp(), sData)
+        return False;
 
     return True
 ##end def
@@ -289,10 +288,11 @@ def writeOutputDataFile(dData):
     return True
 ## end def
 
-def writeForwardingFile(sData):
+def writeInputDataFile(sData):
     # Write the string to the output data file for use by html documents.
+    sData += "\n"
     try:
-        fc = open(_DATA_FORWARDING_FILE, "w")
+        fc = open(INPUT_DATA_FILE, "w")
         fc.write(sData)
         fc.close()
     except Exception, exError:
@@ -515,7 +515,7 @@ def main():
 
             # If conversion successful, write data to output file.
             if result:
-                writeForwardingFile(sData)
+                writeInputDataFile(sData)
                 writeOutputDataFile(dData)
                 if debugOption:
                     print "http request successful"
