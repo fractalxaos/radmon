@@ -2,6 +2,7 @@
 <html>
 <head>
 <title>DIY Radiation</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 body {
     background-image: url("static/chalk.jpg");
@@ -124,11 +125,11 @@ Mode:
 <span class="chartNav">
 <ul class="chartNav">
 <li class="chartNav">Select charts:</li>
-<li class="chartNav"><text class="chartNav" onclick="show_charts(1)">
+<li class="chartNav"><text class="chartNav" onclick="setChartPeriod(1)">
 24 hours</text></li>
-<li class="chartNav"><text class="chartNav" onclick="show_charts(2)">
+<li class="chartNav"><text class="chartNav" onclick="setChartPeriod(2)">
 4 weeks</text></li>
-<li class="chartNav"><text class="chartNav" onclick="show_charts(3)">
+<li class="chartNav"><text class="chartNav" onclick="setChartPeriod(3)">
 12 months</text></li>
 </ul>
 </span>
@@ -164,7 +165,7 @@ Radiation Dose Chart</a> by Randall Monroe.</li>
 /* Globals */
 var radmonDataUrl = "dynamic/radmonOutputData.js";
 var httpRequest = new XMLHttpRequest();
-var graphPeriod;
+var graphPeriod = 1;
 
 /* Chart elements */
 var cpmChart_g = document.getElementById("cpmChart");
@@ -180,45 +181,47 @@ var mode_e = document.getElementById("mode");
 var status_e = document.getElementById("status");    
 
 function main() {
-    getRadmonData();
-    show_charts(1);
-    setInterval(getRadmonData, 5000);
-}
-
-function getRadmonData() {
+    /* Register call back function to process http requests */
     httpRequest.onreadystatechange = function() {
         if (httpRequest.readyState == 4 && httpRequest.status == 200) {
             var dataArray = JSON.parse(httpRequest.responseText);
             displayData(dataArray[0]);
         }
     };
+
+    getRadmonData();
+    getRadmonGraphs();
+    setInterval(getRadmonData, 5000);
+    setInterval(getRadmonGraphs, 300000);
+}
+
+function getRadmonData() {
     httpRequest.open("POST", radmonDataUrl, true);
     httpRequest.send();
 }
 
-function show_charts(n) {
+function setChartPeriod(n) {
     graphPeriod = n;
     getRadmonGraphs();   
-    setInterval(getRadmonGraphs, 300000);
 }
 
 function getRadmonGraphs() {
     var d = new Date;
+    var pfx;
 
     switch(graphPeriod) {
         case 1:
-            cpmChart_g.src = "dynamic/24hr_cpm.png?ver=" + d.getTime();
-            uSvChart_g.src = "dynamic/24hr_svperhr.png?ver=" + d.getTime();
+            pfx = "24hr_";
             break;
         case 2:
-            cpmChart_g.src = "dynamic/4wk_cpm.png?ver=" + d.getTime();
-            uSvChart_g.src = "dynamic/4wk_svperhr.png?ver=" + d.getTime();
+            pfx = "4wk_";
             break;
        case 3:
-            cpmChart_g.src = "dynamic/12m_cpm.png?ver=" + d.getTime();
-            uSvChart_g.src = "dynamic/12m_svperhr.png?ver=" + d.getTime();
+            pfx = "12m_";
             break;
     }
+    cpmChart_g.src = "dynamic/" + pfx + "cpm.png?ver=" + d.getTime();
+    uSvChart_g.src = "dynamic/" + pfx + "svperhr.png?ver=" + d.getTime();
 }
 
 function displayData(dataItem) {
