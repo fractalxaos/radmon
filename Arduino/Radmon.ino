@@ -12,7 +12,7 @@
  network interface IP address, NTP server address, or configure a
  verbose output mode.
  
- Copyright 2017 Jeff Owrey
+ Copyright 2018 Jeff Owrey
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
@@ -79,7 +79,7 @@
  Define the header and version number displayed at startup
  and also by the 'view settings' command.
 */
-#define STARTUP_HEADER "\n\rRadmon v1.6 (c) 2017\n"
+#define STARTUP_HEADER "\n\rRadmon v1.6 (c) 2018\n"
 #define RADMON_VERSION "v1.6"
 /*
  The following define sets the MAC address of the device.  This
@@ -100,7 +100,7 @@
  out over the device's USB port.  This heartbeat consists of a serial
  data string containing the current radiation reading and GM time.
 */
-#define SERIAL_UPDATE_INTERVAL 10000  //milli-seconds
+#define SERIAL_UPDATE_INTERVAL 5000  //milli-seconds
 /*
  The following define sets the port number the HTTP service will use to
  listen for requests from Internet clients.  Normally HTTP requests use
@@ -186,13 +186,15 @@ time_t nextClockSynchTime;
  and the IP address mode state (static or DHCP).
 */
 boolean bVerbose;
-boolean bUseDHCP;
+boolean bUseStaticIP;
 /*
  Create and initialize global arrays to hold the current IP address
  and the NTP server IP address.
 */
-byte ipAddr[4] = {};
-byte ntpIpAddr[4] = {};
+//byte ipAddr[4] = {};
+//byte ntpIpAddr[4] = {};
+byte ipAddr[4];
+byte ntpIpAddr[4];
 
 /*** SYSTEM STARTUP  ***/
 
@@ -215,8 +217,10 @@ void setup()
    Start up the Ethernet interface using either a static or
    DHCP supplied address (depending on stored system configuration).
   */
-  if(bUseDHCP)
+  if(bUseStaticIP)
   {
+    Ethernet.begin(mac, ipAddr);
+  } else {
     if ( Ethernet.begin(mac) == 0 )
     {
       /* DHCP not responding so use APIPA address */
@@ -224,14 +228,6 @@ void setup()
       Ethernet.begin(mac, ipAddr);
       Serial.println(F("DHCP failed - using APIPA "));
     }
-    else
-    {
-      Serial.print(F("DHCP "));
-    }
-  }
-  else
-  {
-    Ethernet.begin(mac, ipAddr);
   }
   Serial.print(F("IP address: ")); Serial.println(Ethernet.localIP());
   /*
@@ -796,13 +792,13 @@ void displaySettings()
 
   // Display local IP address
   sprintf(sBuf, "%d.%d.%d.%d", ipAddr[0], ipAddr[1], ipAddr[2], ipAddr[3]);
-  if (bUseDHCP)
+  if (bUseStaticIP)
   {
-    Serial.print(F("DHCP IP: "));
+    Serial.print(F("Static IP: "));
   }
   else
   {
-    Serial.print(F("Static IP: "));
+    Serial.print(F("DHCP IP: "));
   }
   Serial.println(sBuf);
   
@@ -830,12 +826,13 @@ void setIP()
   
   if(strlen(sBuf) == 0)
   {
-    bUseDHCP = true;
-    parseIpAddress(ipAddr, "0.0.0.0");
+    bUseStaticIP = false;
+    strcpy(sBuf, "0.0.0.0");
+    parseIpAddress(ipAddr, sBuf);
   }
   else
   {
-    bUseDHCP = false;
+    bUseStaticIP = true;
     parseIpAddress(ipAddr, sBuf);
   }
   Serial.println();
@@ -851,12 +848,13 @@ void setNTPIP()
 {
   char sBuf[16];
   
-  Serial.print(F("enter IP: "));
+  Serial.print(F("enter IP (<CR> for default): "));
   getSerialLine(sBuf, 16);
   
   if (strlen(sBuf) == 0)
   {
-    parseIpAddress(ntpIpAddr, DEFAULT_NTP_SERVER_IP_ADDR);
+    strcpy(sBuf, DEFAULT_NTP_SERVER_IP_ADDR);
+    parseIpAddress(ntpIpAddr, sBuf);
   }
   else
   {
@@ -1001,7 +999,7 @@ void writeSettingsToEEPROM()
     EEPROM.write(ix + 4, ntpIpAddr[ix]);
   }
   EEPROM.write(8, bVerbose);
-  EEPROM.write(9, bUseDHCP);
+  EEPROM.write(9, bUseStaticIP);
   return;
 }
 
@@ -1020,7 +1018,7 @@ void readSettingsFromEEPROM()
     ntpIpAddr[ix] = EEPROM.read(ix + 4);
   }
   bVerbose = EEPROM.read(8);
-  bUseDHCP = EEPROM.read(9);
+  bUseStaticIP = EEPROM.read(9);
   return;
 }
 
