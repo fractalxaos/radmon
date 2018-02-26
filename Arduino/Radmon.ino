@@ -453,10 +453,10 @@ void listenForEthernetClients()
  requesting client,
 */
 void transmitHttpHeader(EthernetClient client) {
-  client.print(F("HTTP/1.1 200 OK\r\n"        \
+  client.print(F("HTTP/1.1 200 OK\r\n"          \
                  "Content-Type: text/html\r\n"  \
                  "Connnection: close\r\n"       \
-                 "Refresh: 10\r\n"              \
+                 "Refresh: 5\r\n"               \
                  "\r\n"                         \
                  ));
 }
