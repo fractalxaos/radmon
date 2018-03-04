@@ -162,16 +162,17 @@ Radiation Dose Chart</a> by Randall Monroe.</li>
 
 <script>
 
-/* Globals */
-var radmonDataUrl = "dynamic/radmonOutputData.js";
-var httpRequest = new XMLHttpRequest();
-var graphPeriod = 1;
+/* Global constants */
 
-/* Chart elements */
+var radmonDataUrl = "dynamic/radmonOutputData.js";
+
+/* Global DOM objects */
+
+// Chart elements
 var cpmChart_g = document.getElementById("cpmChart");
 var uSvChart_g = document.getElementById("uSvChart");
 
-/* Text elements */
+// Text elements
 var date_e = document.getElementById("date");    
 var time_e = document.getElementById("time"); 
 var cpm_e = document.getElementById("cpm");    
@@ -180,16 +181,28 @@ var uSvPerHr_e = document.getElementById("uSvPerHr");
 var mode_e = document.getElementById("mode");    
 var status_e = document.getElementById("status");    
 
+/* Global objects */
+
+var httpRequest = new XMLHttpRequest();
+
+/* Global variables */
+
+var graphPeriod;
+
+
 function main() {
     /* Register call back function to process http requests */
     httpRequest.onreadystatechange = function() {
         if (httpRequest.readyState == 4 && httpRequest.status == 200) {
             var dataArray = JSON.parse(httpRequest.responseText);
             displayData(dataArray[0]);
+        } else if (httpRequest.readyState == 4 && httpRequest.status == 404) {
+            displayOfflineStatus();
         }
     };
 
     getRadmonData();
+    graphPeriod = 1;
     getRadmonGraphs();
     setInterval(getRadmonData, 5000);
     setInterval(getRadmonGraphs, 300000);
@@ -249,6 +262,20 @@ function displayData(dataItem) {
     } else {
        status_e.style.color = "red";
     }
+}
+
+function displayOfflineStatus(dataItem) {
+    var d = new Date();
+    localTimeZone = d.getTimezoneOffset() / 60;
+    date_e.innerHTML = (d.getMonth() + 1) + "/" + d.getDate() + "/" + d.getFullYear();    
+    time_e.innerHTML = d.getHours() + ":" + d.getMinutes() + "  <small>(GMT+" + 
+                       localTimeZone + ")</small>";
+    cpm_e.innerHTML = "";    
+    cps_e.innerHTML = "";    
+    uSvPerHr_e.innerHTML = "";    
+    mode_e.innerHTML = "";    
+    status_e.innerHTML = "offline";    
+    status_e.style.color = "red";
 }
 
 </script>

@@ -8,7 +8,7 @@
 # device and the Internet web server.  The agent periodically sends an http
 # request to the radiation monitoring device and processes the response from
 # the device and performs a number of operations:
-#     - conversion of data items
+#     - conversion of data itemsq
 #     - update a round robin (rrdtool) database with the radiation data
 #     - periodically generate graphic charts for display in html documents
 #     - forward the radiation data to other services
@@ -32,6 +32,7 @@
 # Revision History
 #   * v20 released 15 Sep 2015 by J L Owrey; first release
 #   * v21 released 27 Nov 2017 by J L Owrey; bug fixes; updates
+#   * v22 released 03 Mar 2018 by J L Owrey; improved code readability
 #
 
 _MIRROR_SERVER = False
@@ -49,10 +50,9 @@ _USER = os.environ['USER']
    ### DEFAULT WEATHER STATION URL ###
 
 # ip address of radiation monitoring device
-_RADIATION_MONITOR_URL = "http://YOUR_RADIATION_MONITOR_IP_ADDRESS"
+_DEFAULT_RADIATION_MONITOR_URL = '{your radiation monitor device url}'
 # url if this is a mirror server
-_PRIMARY_SERVER_URL = \
-    "http://YOUR_PRIMARY_SERVER/USER/radmon/dynamic/radmonInputData.dat"
+_PRIMARY_SERVER_URL = '{your primary server radmon data url}'
 
     ### FILE AND FOLDER LOCATIONS ###
 
@@ -63,7 +63,7 @@ _CHARTS_DIRECTORY = _DOCROOT_PATH + "dynamic/"
  # database that stores weather data
 _RRD_FILE = "/home/%s/database/radmonData.rrd" % _USER
 # location of data input file
-INPUT_DATA_FILE = _DOCROOT_PATH + "dynamic/radmonInputData.dat"
+_INPUT_DATA_FILE = _DOCROOT_PATH + "dynamic/radmonInputData.dat"
 # location of data output file
 _OUTPUT_DATA_FILE = _DOCROOT_PATH + "dynamic/radmonOutputData.js"
 
@@ -77,7 +77,7 @@ _DATABASE_UPDATE_INTERVAL = 30
 # number seconds to wait for a response to HTTP request
 _HTTP_REQUEST_TIMEOUT = 3
 # max number of failed data requests allowed
-_MAX_RADIATION_MONITOR_OFFLINE_COUNT = 2
+_MAX_FAILED_DATA_REQUESTS = 2
 # radmon chart dimensions
 _CHART_WIDTH = 600
 _CHART_HEIGHT = 150
@@ -89,11 +89,11 @@ debugOption = False
 # online status of radiation monitor
 radiationMonitorOnline = True
 # number of unsuccessful http requests
-radiationMonitorOfflineCount = 0
+failedDataRequestCount = 0
 # status of reset command to radiation monitor
 remoteDeviceReset = False
 # ip address of radiation monitor
-radiationMonitorUrl = _RADIATION_MONITOR_URL
+radiationMonitorUrl = _DEFAULT_RADIATION_MONITOR_URL
 # web update frequency
 dataRequestInterval = _DEFAULT_DATA_REQUEST_INTERVAL
 
@@ -115,27 +115,29 @@ def setOfflineStatus(dData):
            dData - dictionary object containing weather data
        Returns nothing.
     """
-    global radiationMonitorOnline, radiationMonitorOfflineCount
+    global radiationMonitorOnline, failedDataRequestCount
 
-    radiationMonitorOfflineCount += 1
+    if os.path.exists(_INPUT_DATA_FILE):
+        os.remove(_INPUT_DATA_FILE)
 
-    if radiationMonitorOfflineCount < _MAX_RADIATION_MONITOR_OFFLINE_COUNT:
+    if failedDataRequestCount < _MAX_FAILED_DATA_REQUESTS - 1:
+        failedDataRequestCount += 1
         return
 
     # If the radiation monitor was previously online, then send a message
     # that we are now offline.
     if radiationMonitorOnline:
         print "%s: radiation monitor offline" % getTimeStamp()
-        if os.path.exists(INPUT_DATA_FILE):
-            os.remove(INPUT_DATA_FILE)
         radiationMonitorOnline = False
 
-    for key in dData:
-        dData[key] = ''
+        dData['UTC'] = ''
+        dData['Mode'] = ''
+        dData['uSvPerHr'] = ''
+        dData['CPM'] = ''
+        dData['CPS'] = ''
+        dData['status'] = 'offline'
 
-    dData['status'] = 'offline'
-
-    writeOutputDataFile(dData)
+        writeOutputDataFile(dData)
     return
 ##end def
 
@@ -152,7 +154,7 @@ def getRadiationData():
     Returns a string containing the radiation data, or None if
     not successful.
     """
-    global radiationMonitorOnline, radiationMonitorOfflineCount, \
+    global radiationMonitorOnline, failedDataRequestCount, \
            remoteDeviceReset
 
     if _MIRROR_SERVER:
@@ -179,15 +181,13 @@ def getRadiationData():
             print "http error: %s" % exError
         return None
 
-    radiationMonitorOfflineCount = 0
-
     # If the radiation monitor was previously offline, then send a message
     # that we are now online.
     if not radiationMonitorOnline:
         print "%s radiation monitor online" % getTimeStamp()
         radiationMonitorOnline = True
 
-    #print content
+    failedDataRequestCount = 0
     return content
 ##end def
 
@@ -250,6 +250,8 @@ def convertData(dData):
         
         dData['CPM'] = int(dData.pop('CPM'))
 
+        dData['CPS'] = int(dData.pop('CPS'))
+
     except Exception, exError:
         print "%s convertData: %s" % (getTimeStamp(), exError)
         result = False
@@ -258,7 +260,8 @@ def convertData(dData):
 ##end def
 
 def writeOutputDataFile(dData):
-    """Convert individual weather string data items as necessary.
+    """Write radiation data items to a JSON formatted file for use by
+       HTML documents.
        Parameters:
            lsData - a list object containing the data to be written
                     to the JSON file
@@ -282,17 +285,20 @@ def writeOutputDataFile(dData):
         print "%s writeOutputDataFile: %s" % (getTimeStamp(), exError)
         return False
 
-    if debugOption and 0:
-        print sData
-
     return True
 ## end def
 
 def writeInputDataFile(sData):
-    # Write the string to the output data file for use by html documents.
+    """Write raw data from radiation monitor to file for use by mirror
+       servers.
+       Parameters:
+           sData - a string object containing the data string from
+                   the radiation monitor
+       Returns true if successful, false otherwise.
+    """
     sData += "\n"
     try:
-        fc = open(INPUT_DATA_FILE, "w")
+        fc = open(_INPUT_DATA_FILE, "w")
         fc.write(sData)
         fc.close()
     except Exception, exError:
@@ -314,13 +320,12 @@ def updateDatabase(dData):
     global remoteDeviceReset
 
     # The RR database stores whole units, so convert uSv to Sv.
-    #Svvalue = float(dData['uSvPerHr']) * 1.0E-06
-    Svvalue = dData['uSvPerHr'] * 1.0E-06 
+    SvPerHr = dData['uSvPerHr'] * 1.0E-06 
 
     # Create the rrdtool update command.
     strCmd = "rrdtool update %s %s:%s:%s" % \
-                       (_RRD_FILE, dData['UTC'], dData['CPM'], Svvalue)
-    if debugOption:
+                       (_RRD_FILE, dData['UTC'], dData['CPM'], SvPerHr)
+    if debugOption and False:
         print "%s" % strCmd # DEBUG
 
     # Run the command as a subprocess.
@@ -329,15 +334,15 @@ def updateDatabase(dData):
                              stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError, exError:
         print "%s: rrdtool update failed: %s" % \
-                                 (getTimeStamp(), exError.output)
+                    (getTimeStamp(), exError.output)
         if exError.output.find("illegal attempt to update using time") > -1:
             remoteDeviceReset = True
-            print "%s: rebooting radiation monitor" % \
-                                 (getTimeStamp())
-
+            print "%s: rebooting radiation monitor" % (getTimeStamp())
         return False
-
-    return True
+    else:
+        if debugOption:
+            print 'database update sucessful'
+        return True
 ##end def
 
 def createGraph(fileName, dataItem, gLabel, gTitle, gStart,
@@ -392,7 +397,7 @@ def createGraph(fileName, dataItem, gLabel, gTitle, gStart,
         strCmd += "CDEF:smoothed=dSeries,%s,TREND LINE3:smoothed#ff0000 " \
                   % trendWindow[gStart]
      
-    if debugOption:
+    if debugOption and False:
         print "%s\n" % strCmd # DEBUG
     
     # Run the formatted rrdtool command as a subprocess.
@@ -475,9 +480,6 @@ def main():
     # last time the rrdtool database updated
     lastDatabaseUpdateTime = -1
 
-    # define empty dictionary object for radmon data
-    dData = {}
-
     ## Get command line arguments.
     getCLarguments()
 
@@ -496,6 +498,7 @@ def main():
         # monitor and process the received data.
         if currentTime - lastDataRequestTime > dataRequestInterval:
             lastDataRequestTime = currentTime
+            dData = {}
             result = True
 
             # Get the data string from the device.
@@ -506,14 +509,13 @@ def main():
 
             # If successful parse the data.
             if result:
-                dData = {}
                 result = parseDataString(sData, dData)
 
             # If parsing successful, convert the data.
             if result:
                 result = convertData(dData)
 
-            # If conversion successful, write data to output file.
+            # If conversion successful, write data to data files.
             if result:
                 writeInputDataFile(sData)
                 writeOutputDataFile(dData)
@@ -547,5 +549,11 @@ def main():
 ## end def
 
 if __name__ == '__main__':
-    main()
-        
+    try:
+        main()
+    except KeyboardInterrupt:
+        print '\nInterrupted'
+        if os.path.exists(_OUTPUT_DATA_FILE):
+            os.remove(_OUTPUT_DATA_FILE)
+        if os.path.exists(_INPUT_DATA_FILE):
+            os.remove(_INPUT_DATA_FILE)

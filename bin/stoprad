@@ -1,11 +1,24 @@
 #!/bin/bash
+# Stop the radmon agent process and clean up environment.
 
-# Next stop the database update process.
+# Set path to radmon input data file
+RADMON_INPUT_DATA_FILE="/home/$USER/public_html/radmon/dynamic/radmonInputData.dat"
+RADMON_OUTPUT_DATA_FILE="/home/$USER/public_html/radmon/dynamic/radmonOutputData.js"
 
 PROCESS_ID="$(ps x | awk '/[r]admonAgent.py/{print $1}')"
+
 if [ -n "$PROCESS_ID" ]; then
   printf "killing radmon agent [%s]\n" $PROCESS_ID
   kill $PROCESS_ID
+
+  # Remove input data file to alert mirror servers
+  if [ -e $RADMON_INPUT_DATA_FILE ]; then
+    rm $RADMON_INPUT_DATA_FILE
+  fi
+  # Remove output data file to alert web clients
+  if [ -e $RADMON_OUTPUT_DATA_FILE ]; then
+    rm $RADMON_OUTPUT_DATA_FILE
+  fi
 else
   echo radmon agent not running
 fi
