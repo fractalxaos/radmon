@@ -32,7 +32,8 @@
 # Revision History
 #   * v20 released 15 Sep 2015 by J L Owrey; first release
 #   * v21 released 27 Nov 2017 by J L Owrey; bug fixes; updates
-#   * v22 released 03 Mar 2018 by J L Owrey; improved code readability
+#   * v22 released 03 Mar 2018 by J L Owrey; improved code readability;
+#         improved radmon device offline status handling
 #
 
 _MIRROR_SERVER = False
@@ -50,9 +51,9 @@ _USER = os.environ['USER']
    ### DEFAULT WEATHER STATION URL ###
 
 # ip address of radiation monitoring device
-_DEFAULT_RADIATION_MONITOR_URL = '{your radiation monitor device url}'
+_DEFAULT_RADIATION_MONITOR_URL = '{your radmon device url}'
 # url if this is a mirror server
-_PRIMARY_SERVER_URL = '{your primary server radmon data url}'
+_PRIMARY_SERVER_URL = '{your primary server weather data url}'
 
     ### FILE AND FOLDER LOCATIONS ###
 
@@ -129,15 +130,8 @@ def setOfflineStatus(dData):
     if radiationMonitorOnline:
         print "%s: radiation monitor offline" % getTimeStamp()
         radiationMonitorOnline = False
-
-        dData['UTC'] = ''
-        dData['Mode'] = ''
-        dData['uSvPerHr'] = ''
-        dData['CPM'] = ''
-        dData['CPS'] = ''
-        dData['status'] = 'offline'
-
-        writeOutputDataFile(dData)
+        if os.path.exists(_OUTPUT_DATA_FILE):
+            os.remove(_OUTPUT_DATA_FILE)
     return
 ##end def
 
