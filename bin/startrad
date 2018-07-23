@@ -1,5 +1,10 @@
 #!/bin/bash
 #
+# The monitor url can look something like http://192.168.1.155, or
+# something linke http://radiationMonitor.domain.com depending on
+# whether your local network uses a domain name server.
+#
+MONITOR_URL="{your monitor url}"
 
 APP_PATH="/home/$USER/bin"
 LOG_PATH="/home/$USER/log"
@@ -13,5 +18,5 @@ if [ -n "$PROCESS_ID" ]; then
 else
   printf "starting up radmon agent\n"
   cd $APP_PATH
-  ./radmonAgent.py -t 10 -u 'http://73.157.139.23:4371' >> $LOG_PATH/radmonAgent.log 2>&1 &
+  ./radmonAgent.py -t 10 -u $MONITOR_URL >> $LOG_PATH/radmonAgent.log 2>&1 &
 fi

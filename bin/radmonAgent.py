@@ -40,7 +40,8 @@ _MIRROR_SERVER = False
 
 import os
 import urllib2
-import sys   
+import sys
+import signal
 import subprocess
 import multiprocessing
 import time
@@ -69,6 +70,8 @@ _OUTPUT_DATA_FILE = _DOCROOT_PATH + "dynamic/radmonOutputData.js"
 _RRD_FILE = "/home/%s/database/radmonData.rrd" % _USER
 
     ### GLOBAL CONSTANTS ###
+# max number of failed data requests allowed
+_MAX_FAILED_DATA_REQUESTS = 2
 # interval in seconds between data requests to radiation monitor
 _DEFAULT_DATA_REQUEST_INTERVAL = 5
 # defines how often the charts get updated in seconds
@@ -77,10 +80,9 @@ _CHART_UPDATE_INTERVAL = 300
 _DATABASE_UPDATE_INTERVAL = 30
 # number seconds to wait for a response to HTTP request
 _HTTP_REQUEST_TIMEOUT = 3
-# max number of failed data requests allowed
-_MAX_FAILED_DATA_REQUESTS = 2
-# radmon chart dimensions
+# standard chart width in pixels
 _CHART_WIDTH = 600
+# standard chart height in pixels
 _CHART_HEIGHT = 150
 
    ### GLOBAL VARIABLES ###
@@ -133,6 +135,20 @@ def setOfflineStatus(dData):
         if os.path.exists(_OUTPUT_DATA_FILE):
             os.remove(_OUTPUT_DATA_FILE)
     return
+##end def
+
+def signal_term_handler(signal, frame):
+    """Send message to log when process killed
+       Parameters: signal, frame - sigint parameters
+       Returns: nothing
+    """
+    print '%s terminating radmon agent process' % \
+              (getTimeStamp())
+    if os.path.exists(_OUTPUT_DATA_FILE):
+        os.remove(_OUTPUT_DATA_FILE)
+    if os.path.exists(_INPUT_DATA_FILE):
+        os.remove(_INPUT_DATA_FILE)
+    sys.exit(0)
 ##end def
 
   ###  PUBLIC METHODS  ###
@@ -267,9 +283,9 @@ def writeOutputDataFile(dData):
     # Format the weather data as string using java script object notation.
     sData = '[{'
     sData += "\"date\":\"%s\"," % dData['date']
-    sData += "\"CPM\":\"%s\"," % dData['CPM']
-    sData += "\"CPS\":\"%s\"," % dData['CPS']
-    sData += "\"uSvPerHr\":\"%s\"," % dData['uSvPerHr']
+    sData += "\"CPM\":\"%d\"," % dData['CPM']
+    sData += "\"CPS\":\"%d\"," % dData['CPS']
+    sData += "\"uSvPerHr\":\"%.2f\"," % dData['uSvPerHr']
     sData += "\"Mode\":\"%s\"," % dData['Mode']
     sData += "\"status\":\"%s\"," % dData['status']
     sData = sData[:-1] + '}]\n'
@@ -470,6 +486,10 @@ def main():
        Parameters: none
        Returns nothing.
     """
+    signal.signal(signal.SIGTERM, signal_term_handler)
+
+    print '%s starting up radmon agent process' % \
+                  (getTimeStamp())
 
     # last time output JSON file updated
     lastDataRequestTime = -1
@@ -483,8 +503,9 @@ def main():
 
     ## Exit with error if rrdtool database does not exist.
     if not os.path.exists(_RRD_FILE):
-        print "cannot find rrdtool database\nuse createWeatherRrd script to" \
-              " create rrdtool database\n"
+        print 'rrdtool database does not exist\n' \
+              'use createWeatherRrd script to ' \
+              'create rrdtool database\n'
         exit(1)
  
     ## main loop
@@ -550,7 +571,8 @@ if __name__ == '__main__':
     try:
         main()
     except KeyboardInterrupt:
-        print '\nInterrupted'
+        print '\n%s terminating radmon agent process' % \
+              (getTimeStamp())
         if os.path.exists(_OUTPUT_DATA_FILE):
             os.remove(_OUTPUT_DATA_FILE)
         if os.path.exists(_INPUT_DATA_FILE):
