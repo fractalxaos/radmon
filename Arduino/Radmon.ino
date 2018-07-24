@@ -121,7 +121,7 @@
  The following defines how often the system clock gets synchronized
  to network time.
 */
-#define NET_SYNCH_INTERVAL 21600 //number in seconds
+#define NET_SYNCH_INTERVAL 43200 //number in seconds
 /*
  The following defines the size of the buffer space required for the
  serial data string from the Mighty Ohm Geiger counter.  The serial
@@ -191,8 +191,6 @@ boolean bUseStaticIP;
  Create and initialize global arrays to hold the current IP address
  and the NTP server IP address.
 */
-//byte ipAddr[4] = {};
-//byte ntpIpAddr[4] = {};
 byte ipAddr[4];
 byte ntpIpAddr[4];
 
@@ -440,7 +438,7 @@ void listenForEthernetClients()
         transmitErrorPage(client);
     }
 
-    Serial.println(mightOhmData);
+    //Serial.println(mightOhmData);
     // give the web browser time to receive the data
     delay(10);
     // close the connection:
@@ -480,7 +478,7 @@ void transmitWebPage(EthernetClient client) {
                  "h2 {font: 24px arial, sans-serif;}</style>" \
                  "</head><body><h2>Radiation Monitor</h2>" \
                  "<p><a href=\"http://intravisions.com/radmon/\">" \
-                 "<i>IntraVisions.com/radmon</i></a></p>" \
+                 "<i>intravisions.com/radmon</i></a></p>" \
                  "<hr>"));
   /* Data Items */             
   client.print(F("<pre>UTC &#9;"));
