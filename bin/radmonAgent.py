@@ -15,7 +15,7 @@
 #     - write the processed weather data to a JSON file for use by html
 #       documents
 #
-# Copyright 2015 Jeff Owrey
+# Copyright 2018 Jeff Owrey
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
 #    the Free Software Foundation, either version 3 of the License, or
@@ -52,9 +52,9 @@ _USER = os.environ['USER']
    ### DEFAULT RADIATION MONITOR URL ###
 
 # ip address of radiation monitoring device
-_DEFAULT_RADIATION_MONITOR_URL = "{your radiation device url}"
+_DEFAULT_RADIATION_MONITOR_URL = "{your radiation monitor url}"
 # url if this is a mirror server
-_PRIMARY_SERVER_URL = "{your primary server radiation data url}"
+_PRIMARY_SERVER_URL = "{your primary server url}"
 
     ### FILE AND FOLDER LOCATIONS ###
 

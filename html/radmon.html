@@ -28,8 +28,9 @@ h4 {
 }
 .currentDataCell {
     width: 50%;
+    padding: 10px;
     font: bold 20px arial, sans-serif;
-    text-align: center;
+    text-align: middle;
     display: table-cell;
     vertical-align: middle;
 }
@@ -38,7 +39,7 @@ h4 {
     text-align: left;
     line-height: 130%;
     display: inline-block;
-    vertical-align: top;
+    vertical-align: middle;
 }
 .chartContainer {
     padding: 2px;
@@ -209,7 +210,7 @@ function main() {
 }
 
 function getRadmonData() {
-    httpRequest.open("POST", radmonDataUrl, true);
+    httpRequest.open("GET", radmonDataUrl, true);
     httpRequest.send();
 }
 

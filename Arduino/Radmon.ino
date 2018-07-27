@@ -68,7 +68,7 @@
        - simplified serial data output
    * v16 released 16 Sep 2017 by J L Owrey
        - added capability of rebooting via network http request,
-         i.e., "http://{device IP address}/reset"
+         i.e.,    "http://{device_IP_address}/reset"
 */
 
 /***  PREPROCESSOR DEFINES  ***/
