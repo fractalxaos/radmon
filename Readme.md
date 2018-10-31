@@ -8,7 +8,7 @@
 
 <p>You can find all the required software available under open source, GNU license at this project site. Please read the <a href="DIY Radmon Project Description.pdf">project description document</a> for details on procuring the materials, assembling the background radiation monitor and installing the software.</p>
 
-<p>This project encompasses two software components. One component runs on the Arduino Uno with attached Ethernet shield. The other component runs on a Linux web server. Besides the Arduino Uno with attached Ethernet shield, the other required component is a modified Mighty Ohm Geiger counter.</p>
+<p>This project encompasses two software components. One component runs on the Arduino Uno with attached Ethernet shield. The other component runs on a Linux web server. Besides the Arduino Uno with attached Ethernet shield, the other required component is a modified Mighty Ohm Geiger counter.  The server side component may be easily implement with a Raspberry Pi configured as a web server.</p>
 
 <img src="docs/RadiationMonitor.jpg"><br>
 <b>Radiation monitor electronics assembly mounted in box.</b>
