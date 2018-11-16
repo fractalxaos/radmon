@@ -15,7 +15,7 @@
 #     - write the processed weather data to a JSON file for use by html
 #       documents
 #
-# Copyright 2018 Jeff Owrey
+# Copyright 2015 Jeff Owrey
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
 #    the Free Software Foundation, either version 3 of the License, or
@@ -34,9 +34,10 @@
 #   * v21 released 27 Nov 2017 by J L Owrey; bug fixes; updates
 #   * v22 released 03 Mar 2018 by J L Owrey; improved code readability;
 #         improved radmon device offline status handling
-#
+#   * v23 released 15 Nov 2018 by J L Owrey; improved system fault
+#         handling and radiation monitor offline handling
 
-_MIRROR_SERVER = False
+_MIRROR_SERVER = True
 
 import os
 import urllib2
@@ -52,9 +53,10 @@ _USER = os.environ['USER']
    ### DEFAULT RADIATION MONITOR URL ###
 
 # ip address of radiation monitoring device
-_DEFAULT_RADIATION_MONITOR_URL = "{your radiation monitor url}"
+_DEFAULT_RADIATION_MONITOR_URL = "http://192.168.1.24"
 # url if this is a mirror server
-_PRIMARY_SERVER_URL = "{your primary server url}"
+_PRIMARY_SERVER_URL = "http://73.157.139.23:7361" \
+                      "/~pi/radmon/dynamic/radmonInputData.dat"
 
     ### FILE AND FOLDER LOCATIONS ###
 
@@ -89,10 +91,10 @@ _CHART_HEIGHT = 150
 
 # turn on or off of verbose debugging information
 debugOption = False
-# online status of radiation monitor
-radiationMonitorOnline = True
-# number of unsuccessful http requests
-failedDataRequestCount = 0
+# used for detecting system faults and radiation monitor
+# online or offline status
+failedUpdateCount = 0
+stationOnline = True
 # status of reset command to radiation monitor
 remoteDeviceReset = False
 # ip address of radiation monitor
@@ -111,33 +113,28 @@ def getTimeStamp():
     return time.strftime( "%m/%d/%Y %T", time.localtime() )
 ##end def
 
-def setOfflineStatus(dData):
+def setStatusToOffline():
     """Set the status of the the upstream device to "offline" and sends
        blank data to the downstream clients.
        Parameters:
            dData - dictionary object containing weather data
        Returns nothing.
     """
-    global radiationMonitorOnline, failedDataRequestCount
+    global stationOnline
 
     if os.path.exists(_INPUT_DATA_FILE):
         os.remove(_INPUT_DATA_FILE)
-
-    if failedDataRequestCount < _MAX_FAILED_DATA_REQUESTS - 1:
-        failedDataRequestCount += 1
-        return
+    if os.path.exists(_OUTPUT_DATA_FILE):
+       os.remove(_OUTPUT_DATA_FILE)
 
     # If the radiation monitor was previously online, then send a message
     # that we are now offline.
-    if radiationMonitorOnline:
-        print "%s: radiation monitor offline" % getTimeStamp()
-        radiationMonitorOnline = False
-        if os.path.exists(_OUTPUT_DATA_FILE):
-            os.remove(_OUTPUT_DATA_FILE)
-    return
+    if stationOnline:
+        print '%s radiation monitor offline' % getTimeStamp()
+    stationOnline = False
 ##end def
 
-def signal_term_handler(signal, frame):
+def terminateAgentProcess(signal, frame):
     """Send message to log when process killed
        Parameters: signal, frame - sigint parameters
        Returns: nothing
@@ -164,8 +161,7 @@ def getRadiationData():
     Returns a string containing the radiation data, or None if
     not successful.
     """
-    global radiationMonitorOnline, failedDataRequestCount, \
-           remoteDeviceReset
+    global remoteDeviceReset
 
     if _MIRROR_SERVER:
         sUrl = _PRIMARY_SERVER_URL
@@ -193,13 +189,6 @@ def getRadiationData():
             print "http error: %s" % exError
         return None
 
-    # If the radiation monitor was previously offline, then send a message
-    # that we are now online.
-    if not radiationMonitorOnline:
-        print "%s radiation monitor online" % getTimeStamp()
-        radiationMonitorOnline = True
-
-    failedDataRequestCount = 0
     return content
 ##end def
 
@@ -321,6 +310,28 @@ def writeInputDataFile(sData):
 
     return True
 ##end def
+
+def setStationStatus(updateSuccess):
+    global failedUpdateCount, stationOnline
+
+    if updateSuccess:
+        failedUpdateCount = 0
+        # Set status and send a message to the log if the station was
+        # previously offline and is now online.
+        if not stationOnline:
+            print '%s radiation monitor online' % getTimeStamp()
+            stationOnline = True
+        if debugOption:
+            print 'radiation update successful'
+    else:
+        failedUpdateCount += 1
+        if debugOption:
+           print 'radiation update failed'
+
+    if failedUpdateCount >= _MAX_FAILED_DATA_REQUESTS:
+        setStatusToOffline()
+##end def
+
 
 def updateDatabase(dData):
     """
@@ -486,7 +497,7 @@ def main():
        Parameters: none
        Returns nothing.
     """
-    signal.signal(signal.SIGTERM, signal_term_handler)
+    signal.signal(signal.SIGTERM, terminateAgentProcess)
 
     print '%s starting up radmon agent process' % \
                   (getTimeStamp())
@@ -523,7 +534,6 @@ def main():
             # Get the data string from the device.
             sData = getRadiationData()
             if sData == None:
-                setOfflineStatus(dData)
                 result = False
 
             # If successful parse the data.
@@ -538,15 +548,18 @@ def main():
             if result:
                 writeInputDataFile(sData)
                 writeOutputDataFile(dData)
-                if debugOption:
-                    print "http request successful"
 
                 # At the rrdtool database update interval, update the database.
                 if currentTime - lastDatabaseUpdateTime > \
                         _DATABASE_UPDATE_INTERVAL:   
                     lastDatabaseUpdateTime = currentTime
                     ## Update the round robin database with the parsed data.
-                    result = updateDatabase(dData)
+                    updateDatabase(dData)
+
+            # Set the station status to online or offline depending on the
+            # success or failure of the above operations.
+            setStationStatus(result)
+
 
         # At the chart generation interval, generate charts.
         if currentTime - lastChartUpdateTime > _CHART_UPDATE_INTERVAL:
@@ -559,7 +572,8 @@ def main():
 
         elapsedTime = time.time() - currentTime
         if debugOption:
-            print "processing time: %6f sec\n" % elapsedTime
+            print
+            #print "processing time: %6f sec\n" % elapsedTime
         remainingTime = dataRequestInterval - elapsedTime
         if remainingTime > 0.0:
             time.sleep(remainingTime)
@@ -571,9 +585,5 @@ if __name__ == '__main__':
     try:
         main()
     except KeyboardInterrupt:
-        print '\n%s terminating radmon agent process' % \
-              (getTimeStamp())
-        if os.path.exists(_OUTPUT_DATA_FILE):
-            os.remove(_OUTPUT_DATA_FILE)
-        if os.path.exists(_INPUT_DATA_FILE):
-            os.remove(_INPUT_DATA_FILE)
+        print '\n',
+        terminateAgentProcess('KeyboardInterrupt','Module')

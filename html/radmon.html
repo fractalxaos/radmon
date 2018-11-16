@@ -201,6 +201,9 @@ function main() {
             displayOfflineStatus();
         }
     };
+    httpRequest.ontimeout = function(e) {
+        displayOfflineStatus();
+    };
 
     getRadmonData();
     graphPeriod = 1;
@@ -211,6 +214,7 @@ function main() {
 
 function getRadmonData() {
     httpRequest.open("GET", radmonDataUrl, true);
+    httpRequest.timeout = 3000;
     httpRequest.send();
 }
 
@@ -261,11 +265,11 @@ function displayData(dataItem) {
     if (dataItem.status == "online") {
        status_e.style.color = "green";
     } else {
-       status_e.style.color = "red";
+       displayOffLineStatus();
     }
 }
 
-function displayOfflineStatus(dataItem) {
+function displayOfflineStatus() {
     var d = new Date();
     localTimeZone = d.getTimezoneOffset() / 60;
     date_e.innerHTML = (d.getMonth() + 1) + "/" + d.getDate() + "/" + d.getFullYear();    
@@ -274,7 +278,7 @@ function displayOfflineStatus(dataItem) {
     cpm_e.innerHTML = "";    
     cps_e.innerHTML = "";    
     uSvPerHr_e.innerHTML = "";    
-    mode_e.innerHTML = "";    
+    mode_e.innerHTML = "&nbsp";    
     status_e.innerHTML = "offline";    
     status_e.style.color = "red";
 }
