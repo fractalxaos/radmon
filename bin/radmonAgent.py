@@ -53,10 +53,9 @@ _USER = os.environ['USER']
    ### DEFAULT RADIATION MONITOR URL ###
 
 # ip address of radiation monitoring device
-_DEFAULT_RADIATION_MONITOR_URL = "http://192.168.1.24"
+_DEFAULT_RADIATION_MONITOR_URL = "{your radiation monitor url}"
 # url if this is a mirror server
-_PRIMARY_SERVER_URL = "http://73.157.139.23:7361" \
-                      "/~pi/radmon/dynamic/radmonInputData.dat"
+_PRIMARY_SERVER_URL = "{your mirror server url}"
 
     ### FILE AND FOLDER LOCATIONS ###
 
