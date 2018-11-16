@@ -55,7 +55,7 @@ _USER = os.environ['USER']
 # ip address of radiation monitoring device
 _DEFAULT_RADIATION_MONITOR_URL = "{your radiation monitor url}"
 # url if this is a mirror server
-_PRIMARY_SERVER_URL = "{your mirror server url}"
+_PRIMARY_SERVER_URL = "{your primary server url}"
 
     ### FILE AND FOLDER LOCATIONS ###
 
