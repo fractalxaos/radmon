@@ -34,10 +34,10 @@
 #   * v21 released 27 Nov 2017 by J L Owrey; bug fixes; updates
 #   * v22 released 03 Mar 2018 by J L Owrey; improved code readability;
 #         improved radmon device offline status handling
-#   * v23 released 15 Nov 2018 by J L Owrey; improved system fault
-#         handling and radiation monitor offline handling
+#   * v23 released 16 Nov 2018 by J L Owrey: improved fault handling
+#         and data conversion
 
-_MIRROR_SERVER = True
+_MIRROR_SERVER = False
 
 import os
 import urllib2
@@ -53,9 +53,10 @@ _USER = os.environ['USER']
    ### DEFAULT RADIATION MONITOR URL ###
 
 # ip address of radiation monitoring device
-_DEFAULT_RADIATION_MONITOR_URL = "{your radiation monitor url}"
+_DEFAULT_RADIATION_MONITOR_URL = "http://192.168.1.24"
 # url if this is a mirror server
-_PRIMARY_SERVER_URL = "{your primary server url}"
+_PRIMARY_SERVER_URL = "http://73.157.139.23:7361" \
+                      "/~pi/radmon/dynamic/radmonInputData.dat"
 
     ### FILE AND FOLDER LOCATIONS ###
 
@@ -243,15 +244,10 @@ def convertData(dData):
         #dData['ELT'] = time.time()
         
         dData['Mode'] = dData['Mode'].lower()
- 
-        dData['uSvPerHr'] = float(dData.pop('uSv/hr'))
-        
-        dData['CPM'] = int(dData.pop('CPM'))
-
-        dData['CPS'] = int(dData.pop('CPS'))
+        dData['uSvPerHr'] = '%.2f' % float(dData.pop('uSv/hr'))
 
     except Exception, exError:
-        print "%s convert data failed: %s" % (getTimeStamp(), exError)
+        print "%s data conversion failed: %s" % (getTimeStamp(), exError)
         result = False
 
     return result
@@ -268,14 +264,14 @@ def writeOutputDataFile(dData):
     # Set date to current time and data
     dData['date'] = time.strftime("%m/%d/%Y %T", time.localtime(dData['ELT']))
 
+    dTemp = dict(dData)
+    dTemp.pop('ELT')
+    dTemp.pop('UTC')
+    
     # Format the weather data as string using java script object notation.
     sData = '[{'
-    sData += "\"date\":\"%s\"," % dData['date']
-    sData += "\"CPM\":\"%d\"," % dData['CPM']
-    sData += "\"CPS\":\"%d\"," % dData['CPS']
-    sData += "\"uSvPerHr\":\"%.2f\"," % dData['uSvPerHr']
-    sData += "\"Mode\":\"%s\"," % dData['Mode']
-    sData += "\"status\":\"%s\"," % dData['status']
+    for key in dTemp:
+        sData += '\"%s\":\"%s\",' % (key, dData[key])
     sData = sData[:-1] + '}]\n'
 
     # Write the string to the output data file for use by html documents.
@@ -304,7 +300,7 @@ def writeInputDataFile(sData):
         fc.write(sData)
         fc.close()
     except Exception, exError:
-        print "%s writeOutputDataFile: %s" % (getTimeStamp(), exError)
+        print "%s writeInputDataFile: %s" % (getTimeStamp(), exError)
         return False
 
     return True
@@ -344,7 +340,7 @@ def updateDatabase(dData):
     global remoteDeviceReset
 
     # The RR database stores whole units, so convert uSv to Sv.
-    SvPerHr = dData['uSvPerHr'] * 1.0E-06 
+    SvPerHr = float(dData['uSvPerHr']) * 1.0E-06 
 
     # Create the rrdtool update command.
     strCmd = "rrdtool update %s %s:%s:%s" % \
