@@ -5,13 +5,12 @@
 # Module: radmonAgent.py
 #
 # Description: This module acts as an agent between the radiation monitoring
-# device and the Internet web server.  The agent periodically sends an http
+# device and Internet web services.  The agent periodically sends an http
 # request to the radiation monitoring device and processes the response from
 # the device and performs a number of operations:
-#     - conversion of data itemsq
+#     - conversion of data items
 #     - update a round robin (rrdtool) database with the radiation data
 #     - periodically generate graphic charts for display in html documents
-#     - forward the radiation data to other services
 #     - write the processed weather data to a JSON file for use by html
 #       documents
 #
@@ -56,7 +55,7 @@ _USER = os.environ['USER']
 _DEFAULT_RADIATION_MONITOR_URL = "{your radiation monitor url}"
 # url if this is a mirror server
 _PRIMARY_SERVER_URL = "{your primary server url}" \
-                      "/{user}/radmon/dynamic/radmonInputData.dat"
+                      "/radmon/dynamic/radmonInputData.dat"
 
     ### FILE AND FOLDER LOCATIONS ###
 
@@ -72,6 +71,7 @@ _OUTPUT_DATA_FILE = _DOCROOT_PATH + "dynamic/radmonOutputData.js"
 _RRD_FILE = "/home/%s/database/radmonData.rrd" % _USER
 
     ### GLOBAL CONSTANTS ###
+
 # max number of failed data requests allowed
 _MAX_FAILED_DATA_REQUESTS = 2
 # interval in seconds between data requests to radiation monitor
@@ -91,10 +91,16 @@ _CHART_HEIGHT = 150
 
 # turn on or off of verbose debugging information
 debugOption = False
-# used for detecting system faults and radiation monitor
-# online or offline status
+verboseDebug = False
+
+# The following two items are used for detecting system faults
+# and radiation monitor online or offline status.
+
+# count of failed attempts to get data from radiation monitor
 failedUpdateCount = 0
+# detected status of radiation monitor device
 stationOnline = True
+
 # status of reset command to radiation monitor
 remoteDeviceReset = False
 # ip address of radiation monitor
@@ -106,41 +112,49 @@ dataRequestInterval = _DEFAULT_DATA_REQUEST_INTERVAL
 
 def getTimeStamp():
     """
-    Sets the error message time stamp to the local system time.
+    Set the error message time stamp to the local system time.
     Parameters: none
-    Returns string containing the time stamp.
+    Returns: string containing the time stamp
     """
     return time.strftime( "%m/%d/%Y %T", time.localtime() )
 ##end def
 
 def setStatusToOffline():
-    """Set the status of the the upstream device to "offline" and sends
-       blank data to the downstream clients.
-       Parameters:
-           dData - dictionary object containing weather data
-       Returns nothing.
+    """Set the detected status of the radiation monitor to
+       "offline" and inform downstream clients by removing input
+       and output data files.
+       Parameters: none
+       Returns: nothing
     """
     global stationOnline
 
+    # Inform downstream clients by removing input and output
+    # data files.
     if os.path.exists(_INPUT_DATA_FILE):
         os.remove(_INPUT_DATA_FILE)
     if os.path.exists(_OUTPUT_DATA_FILE):
        os.remove(_OUTPUT_DATA_FILE)
 
-    # If the radiation monitor was previously online, then send a message
-    # that we are now offline.
+    # If the radiation monitor was previously online, then send
+    # a message that we are now offline.
     if stationOnline:
         print '%s radiation monitor offline' % getTimeStamp()
     stationOnline = False
 ##end def
 
 def terminateAgentProcess(signal, frame):
-    """Send message to log when process killed
-       Parameters: signal, frame - sigint parameters
+    """Send a message to log when the agent process gets killed
+       by the operating system.  Inform downstream clients
+       by removing input and output data files.
+       Parameters:
+           signal, frame - dummy parameters
        Returns: nothing
     """
     print '%s terminating radmon agent process' % \
               (getTimeStamp())
+
+    # Inform downstream clients by removing input and output
+    # data files.
     if os.path.exists(_OUTPUT_DATA_FILE):
         os.remove(_OUTPUT_DATA_FILE)
     if os.path.exists(_INPUT_DATA_FILE):
@@ -151,15 +165,12 @@ def terminateAgentProcess(signal, frame):
   ###  PUBLIC METHODS  ###
 
 def getRadiationData():
-    """Send http request to radiation monitoring device.  The response
-       from the device contains the radiation data.  The data is formatted
-       as an html document.
-    Parameters: 
-        radiationMonitorUrl - url of radiation monitoring device
-        HttpRequesttimeout - how long to wait for device
-                             to respond to http request
-    Returns a string containing the radiation data, or None if
-    not successful.
+    """Send http request to radiation monitoring device.  The
+       response from the device contains the radiation data as
+       unformatted ascii text.
+       Parameters: none 
+       Returns: a string containing the radiation data if successful,
+                or None if not successful
     """
     global remoteDeviceReset
 
@@ -168,9 +179,9 @@ def getRadiationData():
     else:
         sUrl = radiationMonitorUrl
         if remoteDeviceReset:
-            sUrl += "/reset"
+            sUrl += "/reset" # reboot the radiation monitor
         else:
-            sUrl += "/rdata"
+            sUrl += "/rdata" # request data from the monitor
 
     try:
         conn = urllib2.urlopen(sUrl, timeout=_HTTP_REQUEST_TIMEOUT)
@@ -184,7 +195,7 @@ def getRadiationData():
     except Exception, exError:
         # If no response is received from the device, then assume that
         # the device is down or unavailable over the network.  In
-        # that case set the status of the device to offline.
+        # that case return None to the calling function.
         if debugOption:
             print "http error: %s" % exError
         return None
@@ -198,7 +209,7 @@ def parseDataString(sData, dData):
        Parameters:
            sData - the string containing the data to be parsed
            dData - a dictionary object to contain the parsed data items
-       Returns true if successful, false otherwise.
+       Returns: True if successful, False otherwise
     """
     try:
         sTmp = sData[2:-2]
@@ -213,6 +224,7 @@ def parseDataString(sData, dData):
             dData[item.split('=')[0]] = item.split('=')[1]
     dData['status'] = 'online'
 
+    # Verfy the expected number of data items have been received.
     if len(dData) != 6:
         print "%s parse failed: corrupted data string" % getTimeStamp()
         return False;
@@ -223,12 +235,9 @@ def parseDataString(sData, dData):
 def convertData(dData):
     """Convert individual radiation data items as necessary.
        Parameters:
-           lsData - a list object containing the radiation data
            dData - a dictionary object containing the radiation data
-       Returns true if successful, false otherwise.
+       Returns: True if successful, False otherwise
     """
-    result = True
- 
     try:
         # Convert the UTC timestamp provided by the radiation monitoring
         # device to epoch local time in seconds.
@@ -248,22 +257,24 @@ def convertData(dData):
 
     except Exception, exError:
         print "%s data conversion failed: %s" % (getTimeStamp(), exError)
-        result = False
+        return False
 
-    return result
+    return True
 ##end def
 
 def writeOutputDataFile(dData):
-    """Write radiation data items to a JSON formatted file for use by
-       HTML documents.
+    """Write radiation data items to the output data file, formatted as 
+       a Javascript file.  This file may then be accessed and used by
+       by downstream clients, for instance, in HTML documents.
        Parameters:
-           lsData - a list object containing the data to be written
-                    to the JSON file
-       Returns true if successful, false otherwise.
+           dData - a dictionary object containing the data to be written
+                   to the output data file
+       Returns: True if successful, False otherwise
     """
     # Set date to current time and data
     dData['date'] = time.strftime("%m/%d/%Y %T", time.localtime(dData['ELT']))
 
+    # Remove unnecessary data items.
     dTemp = dict(dData)
     dTemp.pop('ELT')
     dTemp.pop('UTC')
@@ -287,12 +298,12 @@ def writeOutputDataFile(dData):
 ## end def
 
 def writeInputDataFile(sData):
-    """Write raw data from radiation monitor to file for use by mirror
-       servers.
+    """Write raw data from radiation monitor to the input data file.
+       This file may then be accessed by downstream mirror servers.
        Parameters:
-           sData - a string object containing the data string from
+           sData - a string object containing the raw data from
                    the radiation monitor
-       Returns true if successful, false otherwise.
+       Returns: True if successful, False otherwise
     """
     sData += "\n"
     try:
@@ -307,6 +318,14 @@ def writeInputDataFile(sData):
 ##end def
 
 def setStationStatus(updateSuccess):
+    """Detect if radiation monitor is offline or not available on
+       the network. After a set number of attempts to get data
+       from the monitor set a flag that the station is offline.
+       Parameters:
+           updateSuccess - a boolean that is True if data request
+                           successful, False otherwise
+       Returns: nothing
+    """
     global failedUpdateCount, stationOnline
 
     if updateSuccess:
@@ -319,33 +338,37 @@ def setStationStatus(updateSuccess):
         if debugOption:
             print 'radiation update successful'
     else:
+        # The last attempt failed, so update the failed attempts
+        # count.
         failedUpdateCount += 1
         if debugOption:
            print 'radiation update failed'
 
     if failedUpdateCount >= _MAX_FAILED_DATA_REQUESTS:
+        # Max number of failed data requests, so set
+        # monitor status to offline.
         setStatusToOffline()
 ##end def
 
 
 def updateDatabase(dData):
     """
-    Updates the rrdtool database by executing an rrdtool system command.
-    Formats the command using the data extracted from the radiation
+    Update the rrdtool database by executing an rrdtool system command.
+    Format the command using the data extracted from the radiation
     monitor response.   
     Parameters: dData - dictionary object containing data items to be
                         written to the rr database file
-    Returns true if successful, false otherwise.
+    Returns: True if successful, False otherwise
     """
     global remoteDeviceReset
 
     # The RR database stores whole units, so convert uSv to Sv.
     SvPerHr = float(dData['uSvPerHr']) * 1.0E-06 
 
-    # Create the rrdtool update command.
+    # Format the rrdtool update command.
     strCmd = "rrdtool update %s %s:%s:%s" % \
                        (_RRD_FILE, dData['ELT'], dData['CPM'], SvPerHr)
-    if debugOption and False:
+    if verboseDebug:
         print "%s" % strCmd # DEBUG
 
     # Run the command as a subprocess.
@@ -369,10 +392,11 @@ def createGraph(fileName, dataItem, gLabel, gTitle, gStart,
                 lower, upper, addTrend, autoScale):
     """Uses rrdtool to create a graph of specified weather data item.
        Parameters:
-           fileName - name of graph image file
+           fileName - name of file containing the graph
            dataItem - data item to be graphed
            gLabel - string containing a graph label for the data item
            gTitle - string containing a title for the graph
+           gStart - beginning time of the graphed data
            lower - lower bound for graph ordinate #NOT USED
            upper - upper bound for graph ordinate #NOT USED
            addTrend - 0, show only graph data
@@ -381,7 +405,7 @@ def createGraph(fileName, dataItem, gLabel, gTitle, gStart,
            autoScale - if True, then use vertical axis auto scaling
                (lower and upper parameters are ignored), otherwise use
                lower and upper parameters to set vertical axis scale
-       Returns true if successful, false otherwise.
+       Returns: True if successful, False otherwise
     """
     gPath = _CHARTS_DIRECTORY + fileName + ".png"
     trendWindow = { 'end-1day': 7200,
@@ -417,7 +441,7 @@ def createGraph(fileName, dataItem, gLabel, gTitle, gStart,
         strCmd += "CDEF:smoothed=dSeries,%s,TREND LINE3:smoothed#ff0000 " \
                   % trendWindow[gStart]
      
-    if debugOption and False:
+    if verboseDebug:
         print "%s\n" % strCmd # DEBUG
     
     # Run the formatted rrdtool command as a subprocess.
@@ -438,7 +462,7 @@ def createGraph(fileName, dataItem, gLabel, gTitle, gStart,
 def generateGraphs():
     """Generate graphs for display in html documents.
        Parameters: none
-       Returns nothing.
+       Returns: nothing
     """
     autoScale = False
 
@@ -457,18 +481,23 @@ def generateGraphs():
 ##end def
 
 def getCLarguments():
-    """Get command line arguments.  There are three possible arguments
+    """Get command line arguments.  There are four possible arguments
           -d turns on debug mode
+          -v turns on verbose debug mode
           -t sets the radiation device query interval
           -u sets the url of the radiation monitoring device
-       Returns nothing.
+       Returns: nothing
     """
-    global debugOption, dataRequestInterval, radiationMonitorUrl
+    global debugOption, verboseDebug, dataRequestInterval, \
+           radiationMonitorUrl
 
     index = 1
     while index < len(sys.argv):
         if sys.argv[index] == '-d':
             debugOption = True
+        elif sys.argv[index] == '-v':
+            debugOption = True
+            verboseDebug = True
         elif sys.argv[index] == '-t':
             try:
                 dataRequestInterval = abs(int(sys.argv[index + 1]))
@@ -490,7 +519,7 @@ def main():
     """Handles timing of events and acts as executive routine managing
        all other functions.
        Parameters: none
-       Returns nothing.
+       Returns: nothing
     """
     signal.signal(signal.SIGTERM, terminateAgentProcess)
 
@@ -566,9 +595,10 @@ def main():
         # the next update interval.
 
         elapsedTime = time.time() - currentTime
-        if debugOption:
+        if debugOption and not verboseDebug:
             print
-            #print "processing time: %6f sec\n" % elapsedTime
+        if verboseDebug:
+            print "processing time: %6f sec\n" % elapsedTime
         remainingTime = dataRequestInterval - elapsedTime
         if remainingTime > 0.0:
             time.sleep(remainingTime)
