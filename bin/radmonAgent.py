@@ -36,8 +36,6 @@
 #   * v23 released 16 Nov 2018 by J L Owrey: improved fault handling
 #         and data conversion
 
-_MIRROR_SERVER = False
-
 import os
 import urllib2
 import sys
@@ -53,9 +51,6 @@ _USER = os.environ['USER']
 
 # ip address of radiation monitoring device
 _DEFAULT_RADIATION_MONITOR_URL = "{your radiation monitor url}"
-# url if this is a mirror server
-_PRIMARY_SERVER_URL = "{your primary server url}" \
-                      "/radmon/dynamic/radmonInputData.dat"
 
     ### FILE AND FOLDER LOCATIONS ###
 
@@ -174,14 +169,12 @@ def getRadiationData():
     """
     global remoteDeviceReset
 
-    if _MIRROR_SERVER:
-        sUrl = _PRIMARY_SERVER_URL
+    sUrl = radiationMonitorUrl
+
+    if remoteDeviceReset:
+        sUrl += "/reset" # reboot the radiation monitor
     else:
-        sUrl = radiationMonitorUrl
-        if remoteDeviceReset:
-            sUrl += "/reset" # reboot the radiation monitor
-        else:
-            sUrl += "/rdata" # request data from the monitor
+        sUrl += "/rdata" # request data from the monitor
 
     try:
         conn = urllib2.urlopen(sUrl, timeout=_HTTP_REQUEST_TIMEOUT)
@@ -284,6 +277,9 @@ def writeOutputDataFile(dData):
     for key in dTemp:
         sData += '\"%s\":\"%s\",' % (key, dData[key])
     sData = sData[:-1] + '}]\n'
+
+    if verboseDebug:
+        print sData
 
     # Write the string to the output data file for use by html documents.
     try:
