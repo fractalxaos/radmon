@@ -72,7 +72,7 @@
    * v17 released 29 Oct 2019 by J L Owrey
        - modified NTP server address user setting to allow fully
          qualified domain names as well as IP addresses.  Default
-         NTP address set to "time.nist.gov" per NIST request to use
+         NTP address set to "pool.ntp.org" per ntp.org request to use
          (in order to facilitate load balancing) the fully qualified
          domain name instead of individual server IP addresses.
 */
