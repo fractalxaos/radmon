@@ -1,10 +1,6 @@
 #!/bin/bash
 # Stop the radmon agent process and clean up environment.
 
-# Set path to radmon input data file
-RADMON_INPUT_DATA_FILE="/home/$USER/public_html/radmon/dynamic/radmonInputData.dat"
-RADMON_OUTPUT_DATA_FILE="/home/$USER/public_html/radmon/dynamic/radmonOutputData.js"
-
 PROCESS_ID="$(ps x | awk '/[r]admonAgent.py/{print $1}')"
 
 if [ -n "$PROCESS_ID" ]; then
