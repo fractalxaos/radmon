@@ -1,4 +1,4 @@
-#!/usr/bin/python -u
+#!/usr/bin/python3 -u
 # The -u option above turns off block buffering of python output. This 
 # assures that each error message gets individually printed to the log file.
 #
@@ -35,23 +35,30 @@
 #         improved radmon device offline status handling
 #   * v23 released 16 Nov 2018 by J L Owrey: improved fault handling
 #         and data conversion
+#   * v24 released 14 Jun 2021 by J L Owrey; minor revisions
+#
 #2345678901234567890123456789012345678901234567890123456789012345678901234567890
 
 import os
-import urllib2
 import sys
 import signal
 import subprocess
 import multiprocessing
 import time
 import calendar
+import json
+from urllib.request import urlopen
+
+   ### ENVIRONMENT ###
 
 _USER = os.environ['USER']
+_SERVER_MODE = "primary"
+_USE_RADMON_TIMESTAMP = True
 
    ### DEFAULT RADIATION MONITOR URL ###
 
-# ip address of radiation monitoring device
-_DEFAULT_RADIATION_MONITOR_URL = "{your radiation monitor url}"
+_DEFAULT_RADIATION_MONITOR_URL = \
+    "{your radiation monitor url}"
 
     ### FILE AND FOLDER LOCATIONS ###
 
@@ -60,42 +67,40 @@ _DOCROOT_PATH = "/home/%s/public_html/radmon/" % _USER
 # folder for charts and output data file
 _CHARTS_DIRECTORY = _DOCROOT_PATH + "dynamic/"
 # location of data output file
-_OUTPUT_DATA_FILE = _DOCROOT_PATH + "dynamic/radmonOutputData.js"
+_OUTPUT_DATA_FILE = _DOCROOT_PATH + "dynamic/radmonData.js"
 # database that stores radmon data
 _RRD_FILE = "/home/%s/database/radmonData.rrd" % _USER
 
     ### GLOBAL CONSTANTS ###
 
 # max number of failed data requests allowed
-_MAX_FAILED_DATA_REQUESTS = 2
-# interval in seconds between data requests to radiation monitor
-_DEFAULT_DATA_REQUEST_INTERVAL = 5
-# defines how often the charts get updated in seconds
-_CHART_UPDATE_INTERVAL = 300
-# defines how often the database gets updated
-_DATABASE_UPDATE_INTERVAL = 30
+_MAX_FAILED_DATA_REQUESTS = 3
+# interval in seconds between data requests
+_DEFAULT_DATA_REQUEST_INTERVAL = 2
 # number seconds to wait for a response to HTTP request
 _HTTP_REQUEST_TIMEOUT = 3
+
+# interval in seconds between database updates
+_DATABASE_UPDATE_INTERVAL = 30
+# interval in seconds between chart updates
+_CHART_UPDATE_INTERVAL = 300
 # standard chart width in pixels
 _CHART_WIDTH = 600
 # standard chart height in pixels
 _CHART_HEIGHT = 150
-# source of time stamp attached to output data file
-_USE_RADMON_TIMESTAMP = True
 
    ### GLOBAL VARIABLES ###
 
 # turn on or off of verbose debugging information
-debugOption = False
-verboseDebug = False
+verboseMode = False
+debugMode = False
 
 # The following two items are used for detecting system faults
 # and radiation monitor online or offline status.
-
 # count of failed attempts to get data from radiation monitor
 failedUpdateCount = 0
 # detected status of radiation monitor device
-stationOnline = True
+radmonOnline = True
 
 # status of reset command to radiation monitor
 remoteDeviceReset = False
@@ -122,16 +127,16 @@ def setStatusToOffline():
        Parameters: none
        Returns: nothing
     """
-    global stationOnline
+    global radmonOnline
 
     # Inform downstream clients by removing output data file.
     if os.path.exists(_OUTPUT_DATA_FILE):
        os.remove(_OUTPUT_DATA_FILE)
     # If the radiation monitor was previously online, then send
     # a message that we are now offline.
-    if stationOnline:
-        print '%s radiation monitor offline' % getTimeStamp()
-    stationOnline = False
+    if radmonOnline:
+        print('%s radiation monitor offline' % getTimeStamp())
+    radmonOnline = False
 ##end def
 
 def terminateAgentProcess(signal, frame):
@@ -145,14 +150,14 @@ def terminateAgentProcess(signal, frame):
     # Inform downstream clients by removing output data file.
     if os.path.exists(_OUTPUT_DATA_FILE):
        os.remove(_OUTPUT_DATA_FILE)
-    print '%s terminating radmon agent process' % \
-              (getTimeStamp())
+    print('%s terminating radmon agent process' % \
+              (getTimeStamp()))
     sys.exit(0)
 ##end def
 
   ###  PUBLIC METHODS  ###
 
-def getRadiationData():
+def getRadiationData(dData):
     """Send http request to radiation monitoring device.  The
        response from the device contains the radiation data as
        unformatted ascii text.
@@ -160,8 +165,6 @@ def getRadiationData():
        Returns: a string containing the radiation data if successful,
                 or None if not successful
     """
-    global remoteDeviceReset
-
     sUrl = radiationMonitorUrl
 
     if remoteDeviceReset:
@@ -170,49 +173,64 @@ def getRadiationData():
         sUrl += "/rdata" # request data from the monitor
 
     try:
-        conn = urllib2.urlopen(sUrl, timeout=_HTTP_REQUEST_TIMEOUT)
+        currentTime = time.time()
 
-        # Format received data into a single string.
-        content = ""
-        for line in conn:
-            content += line.strip()
-        del conn
+        response = urlopen(sUrl, timeout=_HTTP_REQUEST_TIMEOUT)
 
-    except Exception, exError:
+        if verboseMode:
+            requestTime = time.time() - currentTime
+            print("http request: %.4f seconds" % requestTime)
+
+        content = response.read().decode('utf-8')
+        content = content.replace('\n', '')
+        content = content.replace('\r', '')
+        if content == "":
+            raise Exception("empty response")
+
+    except Exception as exError:
         # If no response is received from the device, then assume that
         # the device is down or unavailable over the network.  In
         # that case return None to the calling function.
-        if debugOption:
-            print "http error: %s" % exError
-        return None
+        if verboseMode:
+            print("%s getRadiationData: %s" % (getTimeStamp(), exError))
+        return False
+    ##end try
 
-    return content
+    if debugMode:
+        print(content)
+    
+    dData['content'] = content
+
+    return True
 ##end def
 
-def parseDataString(sData, dData):
-    """Parse the radiation data JSON string from the radiation 
-       monitoring device into its component parts.  
+def parseDataString(dData):
+    """Parse the data string returned by the radiation monitor
+       into its component parts.
        Parameters:
-           sData - the string containing the data to be parsed
-           dData - a dictionary object to contain the parsed data items
+            dData - a dictionary object to contain the parsed data items
        Returns: True if successful, False otherwise
     """
+    # Example radiation monitor data string
+    # $,UTC=17:09:33 6/22/2021,CPS=0,CPM=26,uSv/hr=0.14,Mode=SLOW,#
+    
     try:
-        sTmp = sData[2:-2]
-        lsTmp = sTmp.split(',')
-    except Exception, exError:
-        print "%s parseDataString: %s" % (getTimeStamp(), exError)
+        sData = dData.pop('content')
+        lData = sData[2:-2].split(',')
+    except Exception as exError:
+        print("%s parseDataString: %s" % (getTimeStamp(), exError))
         return False
 
     # Load the parsed data into a dictionary for easy access.
-    for item in lsTmp:
+    for item in lData:
         if "=" in item:
             dData[item.split('=')[0]] = item.split('=')[1]
+    # Add status to dictionary object
     dData['status'] = 'online'
 
     # Verfy the expected number of data items have been received.
     if len(dData) != 6:
-        print "%s parse failed: corrupted data string" % getTimeStamp()
+        print("%s parse failed: corrupted data string" % getTimeStamp())
         return False;
 
     return True
@@ -238,87 +256,59 @@ def convertData(dData):
             # that occur when the radiation monitoring device fails to
             # synchronize with a valid NTP time server.
             dData['ELT'] = time.time()
-        
-        dData['Mode'] = dData['Mode'].lower()
+
+        dData['date'] = \
+            time.strftime("%m/%d/%Y %T", time.localtime(dData['ELT']))      
+        dData['mode'] = dData.pop('Mode').lower()
         dData['uSvPerHr'] = '%.2f' % float(dData.pop('uSv/hr'))
 
-    except Exception, exError:
-        print "%s data conversion failed: %s" % (getTimeStamp(), exError)
+    except Exception as exError:
+        print("%s data conversion failed: %s" % (getTimeStamp(), exError))
         return False
 
     return True
 ##end def
 
-def writeOutputDataFile(dData):
+def writeOutputFile(dData):
     """Write radiation data items to the output data file, formatted as 
-       a Javascript file.  This file may then be accessed and used by
+       a JSON file.  This file may then be accessed and used by
        by downstream clients, for instance, in HTML documents.
        Parameters:
            dData - a dictionary object containing the data to be written
                    to the output data file
        Returns: True if successful, False otherwise
     """
-    # Create temporary copy of output data items.
+    # Create temporary copy of output data dictionary
+    # and remove unnecessary items.
     dTemp = dict(dData)
-    # Set date to current time and data
-    dTemp['date'] = time.strftime("%m/%d/%Y %T", time.localtime(dData['ELT']))
-    # Remove unnecessary data items.
     dTemp.pop('ELT')
     dTemp.pop('UTC')
 
     # Format the radmon data as string using java script object notation.
-    sData = '[{'
-    for key in dTemp:
-        sData += '\"%s\":\"%s\",' % (key, dTemp[key])
-    sData = sData[:-1] + '}]\n'
+    jsData = json.loads("{}")
+    try:
+        for key in dTemp:
+            jsData.update({key:dTemp[key]})
+        jsData.update({"serverMode":"%s" % _SERVER_MODE })
+        sData = "[%s]" % json.dumps(jsData)
+    except Exception as exError:
+        print("%s writeOutputFile: %s" % (getTimeStamp(), exError))
+        return False
 
-    if verboseDebug:
-        print sData,
+    if debugMode:
+        print(sData)
 
     # Write the string to the output data file for use by html documents.
     try:
         fc = open(_OUTPUT_DATA_FILE, "w")
         fc.write(sData)
         fc.close()
-    except Exception, exError:
-        print "%s writeOutputDataFile: %s" % (getTimeStamp(), exError)
+    except Exception as exError:
+        print("%s writeOutputFile: %s" % (getTimeStamp(), exError))
         return False
 
     return True
 ## end def
-
-def setStationStatus(updateSuccess):
-    """Detect if radiation monitor is offline or not available on
-       the network. After a set number of attempts to get data
-       from the monitor set a flag that the station is offline.
-       Parameters:
-           updateSuccess - a boolean that is True if data request
-                           successful, False otherwise
-       Returns: nothing
-    """
-    global failedUpdateCount, stationOnline
-
-    if updateSuccess:
-        failedUpdateCount = 0
-        # Set status and send a message to the log if the station was
-        # previously offline and is now online.
-        if not stationOnline:
-            print '%s radiation monitor online' % getTimeStamp()
-            stationOnline = True
-        if debugOption:
-            print 'data request successful'
-    else:
-        # The last attempt failed, so update the failed attempts
-        # count.
-        failedUpdateCount += 1
-        if debugOption:
-           print 'data request failed'
-
-    if failedUpdateCount >= _MAX_FAILED_DATA_REQUESTS:
-        # Max number of failed data requests, so set
-        # monitor status to offline.
-        setStatusToOffline()
-##end def
 
 def updateDatabase(dData):
     """
@@ -337,24 +327,54 @@ def updateDatabase(dData):
     # Format the rrdtool update command.
     strCmd = "rrdtool update %s %s:%s:%s" % \
                        (_RRD_FILE, dData['ELT'], dData['CPM'], SvPerHr)
-    if verboseDebug:
-        print "%s" % strCmd # DEBUG
+    if debugMode:
+        print("%s" % strCmd) # DEBUG
 
     # Run the command as a subprocess.
     try:
         subprocess.check_output(strCmd, shell=True,  \
                              stderr=subprocess.STDOUT)
-    except subprocess.CalledProcessError, exError:
-        print "%s: rrdtool update failed: %s" % \
-                    (getTimeStamp(), exError.output)
+    except subprocess.CalledProcessError as exError:
+        print("%s: rrdtool update failed: %s" % \
+                    (getTimeStamp(), exError.output))
         if exError.output.find("illegal attempt to update using time") > -1:
             remoteDeviceReset = True
-            print "%s: rebooting radiation monitor" % (getTimeStamp())
+            print("%s: rebooting radiation monitor" % (getTimeStamp()))
         return False
+
+    if verboseMode and not debugMode:
+        print("update database")
+
+    return True
+##end def
+
+def setRadmonStatus(updateSuccess):
+    """Detect if radiation monitor is offline or not available on
+       the network. After a set number of attempts to get data
+       from the monitor set a flag that the radmon is offline.
+       Parameters:
+           updateSuccess - a boolean that is True if data request
+                           successful, False otherwise
+       Returns: nothing
+    """
+    global failedUpdateCount, radmonOnline
+
+    if updateSuccess:
+        failedUpdateCount = 0
+        # Set status and send a message to the log if the radmon was
+        # previously offline and is now online.
+        if not radmonOnline:
+            print('%s radiation monitor online' % getTimeStamp())
+            radmonOnline = True
     else:
-        if debugOption:
-            print 'database update sucessful'
-        return True
+        # The last attempt failed, so update the failed attempts
+        # count.
+        failedUpdateCount += 1
+
+    if failedUpdateCount >= _MAX_FAILED_DATA_REQUESTS:
+        # Max number of failed data requests, so set
+        # monitor status to offline.
+        setStatusToOffline()
 ##end def
 
 def createGraph(fileName, dataItem, gLabel, gTitle, gStart,
@@ -403,27 +423,27 @@ def createGraph(fileName, dataItem, gLabel, gTitle, gStart,
     if addTrend == 0:
         strCmd += "LINE1:dSeries#0400ff "
     elif addTrend == 1:
-        strCmd += "CDEF:smoothed=dSeries,%s,TREND LINE3:smoothed#ff0000 " \
+        strCmd += "CDEF:smoothed=dSeries,%s,TREND LINE2:smoothed#006600 " \
                   % trendWindow[gStart]
     elif addTrend == 2:
         strCmd += "LINE1:dSeries#0400ff "
-        strCmd += "CDEF:smoothed=dSeries,%s,TREND LINE3:smoothed#ff0000 " \
+        strCmd += "CDEF:smoothed=dSeries,%s,TREND LINE2:smoothed#006600 " \
                   % trendWindow[gStart]
      
-    if verboseDebug:
-        print "\n%s" % strCmd # DEBUG
+    if debugMode:
+        print("\n%s" % strCmd) # DEBUG
     
     # Run the formatted rrdtool command as a subprocess.
     try:
         result = subprocess.check_output(strCmd, \
                      stderr=subprocess.STDOUT,   \
                      shell=True)
-    except subprocess.CalledProcessError, exError:
-        print "rrdtool graph failed: %s" % (exError.output)
+    except subprocess.CalledProcessError as exError:
+        print("rrdtool graph failed: %s" % (exError.output))
         return False
 
-    if debugOption:
-        print "rrdtool graph: %s" % result,
+    if verboseMode:
+        print("rrdtool graph: %s" % result.decode('utf-8'), end='')
     return True
 
 ##end def
@@ -435,14 +455,17 @@ def generateGraphs():
     """
     autoScale = False
 
+    # past 24 hours
     createGraph('24hr_cpm', 'CPM', 'counts\ per\ minute', 
                 'CPM\ -\ Last\ 24\ Hours', 'end-1day', 0, 0, 2, autoScale)
     createGraph('24hr_svperhr', 'SvperHr', 'Sv\ per\ hour',
                 'Sv/Hr\ -\ Last\ 24\ Hours', 'end-1day', 0, 0, 2, autoScale)
+    # past 4 weeks
     createGraph('4wk_cpm', 'CPM', 'counts\ per\ minute',
                 'CPM\ -\ Last\ 4\ Weeks', 'end-4weeks', 0, 0, 2, autoScale)
     createGraph('4wk_svperhr', 'SvperHr', 'Sv\ per\ hour',
                 'Sv/Hr\ -\ Last\ 4\ Weeks', 'end-4weeks', 0, 0, 2, autoScale)
+    # past year
     createGraph('12m_cpm', 'CPM', 'counts\ per\ minute',
                 'CPM\ -\ Past\ Year', 'end-12months', 0, 0, 2, autoScale)
     createGraph('12m_svperhr', 'SvperHr', 'Sv\ per\ hour',
@@ -452,34 +475,32 @@ def generateGraphs():
 def getCLarguments():
     """Get command line arguments.  There are four possible arguments
           -d turns on debug mode
-          -v turns on verbose debug mode
+          -v turns on verbose mode
           -t sets the radiation device query interval
           -u sets the url of the radiation monitoring device
        Returns: nothing
     """
-    global debugOption, verboseDebug, dataRequestInterval, \
+    global verboseMode, debugMode, dataRequestInterval, \
            radiationMonitorUrl
 
     index = 1
     while index < len(sys.argv):
-        if sys.argv[index] == '-d':
-            debugOption = True
-        elif sys.argv[index] == '-v':
-            debugOption = True
-            verboseDebug = True
+        if sys.argv[index] == '-v':
+            verboseMode = True
+        elif sys.argv[index] == '-d':
+            verboseMode = True
+            debugMode = True
         elif sys.argv[index] == '-t':
-            try:
-                dataRequestInterval = abs(int(sys.argv[index + 1]))
-            except:
-                print "invalid polling period"
-                exit(-1)
+            dataRequestInterval = abs(int(sys.argv[index + 1]))
             index += 1
         elif sys.argv[index] == '-u':
             radiationMonitorUrl = sys.argv[index + 1]
+            if radiationMonitorUrl.find('http://') < 0:
+                radiationMonitorUrl = 'http://' + radiationMonitorUrl
             index += 1
         else:
             cmd_name = sys.argv[0].split('/')
-            print "Usage: %s [-d] [-t seconds] [-u url}" % cmd_name[-1]
+            print("Usage: %s [-d] [-t seconds] [-u url}" % cmd_name[-1])
             exit(-1)
         index += 1
 ##end def
@@ -491,9 +512,10 @@ def main():
        Returns: nothing
     """
     signal.signal(signal.SIGTERM, terminateAgentProcess)
+    signal.signal(signal.SIGINT, terminateAgentProcess)
 
-    print '%s starting up radmon agent process' % \
-                  (getTimeStamp())
+    print('%s starting up radmon agent process' % \
+                  (getTimeStamp()))
 
     # last time output JSON file updated
     lastDataRequestTime = -1
@@ -507,9 +529,9 @@ def main():
 
     ## Exit with error if rrdtool database does not exist.
     if not os.path.exists(_RRD_FILE):
-        print 'rrdtool database does not exist\n' \
+        print('rrdtool database does not exist\n' \
               'use createRadmonRrd script to ' \
-              'create rrdtool database\n'
+              'create rrdtool database\n')
         exit(1)
  
     ## main loop
@@ -517,21 +539,18 @@ def main():
 
         currentTime = time.time() # get current time in seconds
 
-        # Every web update interval request data from the radiation
+        # Every data update interval request data from the radiation
         # monitor and process the received data.
         if currentTime - lastDataRequestTime > dataRequestInterval:
             lastDataRequestTime = currentTime
             dData = {}
-            result = True
 
             # Get the data string from the device.
-            sData = getRadiationData()
-            if sData == None:
-                result = False
+            result = getRadiationData(dData)
 
             # If successful parse the data.
             if result:
-                result = parseDataString(sData, dData)
+                result = parseDataString(dData)
 
             # If parsing successful, convert the data.
             if result:
@@ -539,18 +558,18 @@ def main():
 
             # If conversion successful, write data to data files.
             if result:
-                writeOutputDataFile(dData)
+                writeOutputFile(dData)
 
-                # At the rrdtool database update interval, update the database.
-                if currentTime - lastDatabaseUpdateTime > \
-                        _DATABASE_UPDATE_INTERVAL:   
-                    lastDatabaseUpdateTime = currentTime
-                    ## Update the round robin database with the parsed data.
-                    updateDatabase(dData)
+            # At the rrdtool database update interval, update the database.
+            if result and (currentTime - lastDatabaseUpdateTime > \
+                           _DATABASE_UPDATE_INTERVAL):   
+                lastDatabaseUpdateTime = currentTime
+                ## Update the round robin database with the parsed data.
+                result = updateDatabase(dData)
 
-            # Set the station status to online or offline depending on the
+            # Set the radmon status to online or offline depending on the
             # success or failure of the above operations.
-            setStationStatus(result)
+            setRadmonStatus(result)
 
 
         # At the chart generation interval, generate charts.
@@ -563,10 +582,13 @@ def main():
         # the next update interval.
 
         elapsedTime = time.time() - currentTime
-        if debugOption and not verboseDebug:
-            pass #print
-        if verboseDebug:
-            print "processing time: %6f sec\n" % elapsedTime
+        if verboseMode:
+            if result:
+                print("update successful: %6f sec\n"
+                      % elapsedTime)
+            else:
+                print("update failed: %6f sec\n"
+                      % elapsedTime)
         remainingTime = dataRequestInterval - elapsedTime
         if remainingTime > 0.0:
             time.sleep(remainingTime)
@@ -575,8 +597,5 @@ def main():
 ## end def
 
 if __name__ == '__main__':
-    try:
-        main()
-    except KeyboardInterrupt:
-        print '\n',
-        terminateAgentProcess('KeyboardInterrupt','Module')
+    main()
+
