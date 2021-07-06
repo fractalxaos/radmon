@@ -24,16 +24,21 @@
 #    along with this program.  If not, see http://www.gnu.org/license.
 #
 # Revision History
-#   * v10 released 15 Sep 2015 by J L Owrey
+#   * v11 released 24 Jul 2018 by J L Owrey
 #
+# Example of rrdtool command line executed by this program:
+#
+#   rrdtool create radmonData.rrd --step 30 DS:CPM:GAUGE:60:U:U
+#   DS:SvperHr:GAUGE:60:U:U RRA:LAST:0.5:1:2880 RRA:LAST:0.5:30:35520
+#
+
 import os
-import time
 import subprocess
 
     ### DEFINE FILE LOCATIONS ###
 
 _USER = os.environ['USER']
-_RRD_FILE = "/home/%s/database/radmonData.rrd" % _USER  # the file that stores the data
+_RRD_FILE = "/home/%s/database/radmonData.rrd" % _USER  # rrd database file
 _RRD_SIZE_IN_DAYS = 370 # days
 _1YR_RRA_STEPS_PER_DAY = 96
 _DATABASE_UPDATE_INTERVAL = 30
@@ -51,7 +56,8 @@ def createRrdFile():
      ## Calculate database size
  
     heartBeat = 2 * _DATABASE_UPDATE_INTERVAL
-    rra1yrNumPDP =  int(round(86400 / (_1YR_RRA_STEPS_PER_DAY * _DATABASE_UPDATE_INTERVAL)))
+    rra1yrNumPDP =  int(round(86400 / (_1YR_RRA_STEPS_PER_DAY * \
+                        _DATABASE_UPDATE_INTERVAL)))
     rrd24hrNumRows = int(round(86400 / _DATABASE_UPDATE_INTERVAL))
     rrd1yearNumRows = _1YR_RRA_STEPS_PER_DAY * _RRD_SIZE_IN_DAYS
        
@@ -69,8 +75,7 @@ def createRrdFile():
         subprocess.check_output(strCmd, stderr=subprocess.STDOUT, \
                                 shell=True)
     except subprocess.CalledProcessError, exError:
-        print "%s rrdtool create failed: %s" % \
-                            (getTimeStamp(), exError.output)
+        print "rrdtool create failed: %s" % (exError.output)
         return False
     return True
 ##end def

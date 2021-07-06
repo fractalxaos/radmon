@@ -56,10 +56,10 @@ img.chart {
     text-align: left;
     padding: 10px;
 }
-span.chartNav {
+span.chartSelectors {
     margin: auto;
 }
-ul.chartNav {
+ul.selectorElement {
     list-style-type: none;
     margin: 10px;
     padding: 0;
@@ -67,19 +67,24 @@ ul.chartNav {
     background-color: #bbb;
     text-align: center;
 }
-li.chartNav {
+li.selectorElement {
     display: inline-block;
     font: bold 18px arial, sans-serif;
     color: black;
 }
-text.chartNav:hover {
+span.selectorElement:hover {
     background-color: #333;
     cursor: pointer;
     color: white;
 }
-text.chartNav {
+span.selectorElement {
     display: inline-block;
     padding: 8px 12px;
+}
+#iframe_a {
+    border:none;
+    width:100%;
+    height:450px;
 }
 </style>
 </head>
@@ -94,9 +99,9 @@ DIY Radiation Monitor</a></h2>
 <h4>Albany, Oregon</h4>
 
 <div class="datetime">
-<text id="date"></text>
+<span id="date"></span>
 &nbsp;&nbsp;
-<text id="time"></text>
+<span id="time"></span>
 </div>
 
 <div class="rowContainer">
@@ -108,9 +113,9 @@ Counts per second:<br>
 uSv per hour:
 </div>
 <div class="dataItems">
-<text id="cpm"></text><br>
-<text id="cps"></text><br>
-<text id="uSvPerHr"></text>
+<span id="cpm"></span><br>
+<span id="cps"></span><br>
+<span id="uSvPerHr"></span>
 </div>
 </div>
 
@@ -121,31 +126,56 @@ Status:<br>
 Mode:
 </div>
 <div class="dataItems">
-<text id="status"></text><br>
-<text id="mode"></text>
+<span id="status"></span><br>
+<span id="mode"></span>
 </div>
 </div>
 </div>
 
-<span class="chartNav">
-<ul class="chartNav">
-<li class="chartNav">Select charts:</li>
-<li class="chartNav"><text class="chartNav" onclick="setChartPeriod(1)">
-24 hours</text></li>
-<li class="chartNav"><text class="chartNav" onclick="setChartPeriod(2)">
-4 weeks</text></li>
-<li class="chartNav"><text class="chartNav" onclick="setChartPeriod(3)">
-12 months</text></li>
+<span class="chartSelectors">
+<ul class="selectorElement">
+<li class="selectorElement">Select charts:</li>
+<li class="selectorElement"><span class="selectorElement"
+ onclick="setChartPeriod(1)">
+24 hours</span></li>
+<li class="selectorElement"><span class="selectorElement"
+ onclick="setChartPeriod(2)">
+4 weeks</span></li>
+<li class="selectorElement"><span class="selectorElement"
+ onclick="setChartPeriod(3)">12 months</span></li>
+<li id="customSelector" class="selectorElement" style="visibility:hidden;">
+<span  class="selectorElement"
+ onclick="setChartPeriod(0)">Custom...</span></li>
 </ul>
 </span>
+
+<div class="rowContainer" id="customChartsContainer" style="display:none;">
+<div class="currentDataCell">
+<form id="fmDateSelector" action="radmon.php" method="post"
+ target="iframe_a">
+<label for="beginDate">Begin Date: </label>
+<input id="beginDate" name="beginDate" type="date" value="mm/dd/yyyy" />
+<label for="endDate">End Date: </label>
+<input id="endDate" name="endDate" type="date" value="mm/dd/yyyy" />
+<br><br>
+<input type="button" onclick="getCustomCharts()" value="Get Charts">
+</form>
+<span id="errorMsg"></span><br>
+<iframe id="iframe_a" name="iframe_a"></iframe>
+</div>
+</div>
+
 <br>
 
+
+
+<div class="rowContainer" id="stockChartsContainer">
 <div class="chartContainer">
 <img class="chart" id="cpmChart">
 </div>
-
 <div class="chartContainer">
 <img class="chart" id="uSvChart">
+</div>
 </div>
 
 <div class="notes">
@@ -166,10 +196,10 @@ Radiation Dose Chart</a> by Randall Monroe.</li>
 <br>
 
 <script>
-
+"use strick";
 /* Global constants */
 
-var radmonDataUrl = "dynamic/radmonOutputData.js";
+var radmonDataUrl = "dynamic/radmonData.js";
 
 /* Global DOM objects */
 
@@ -177,7 +207,7 @@ var radmonDataUrl = "dynamic/radmonOutputData.js";
 var cpmChart_g = document.getElementById("cpmChart");
 var uSvChart_g = document.getElementById("uSvChart");
 
-// Text elements
+// Document elements
 var date_e = document.getElementById("date");    
 var time_e = document.getElementById("time"); 
 var cpm_e = document.getElementById("cpm");    
@@ -186,16 +216,25 @@ var uSvPerHr_e = document.getElementById("uSvPerHr");
 var mode_e = document.getElementById("mode");    
 var status_e = document.getElementById("status");    
 
+// Custom charts document elements
+var customChartsContainer = document.getElementById("customChartsContainer");
+var stockChartsContainer = document.getElementById("stockChartsContainer");
+var fmDateSelector = document.getElementById("fmDateSelector");
+var errorMsg = document.getElementById("errorMsg");
+var customSelector = document.getElementById("customSelector");
+
+
 /* Global objects */
 
 var httpRequest = new XMLHttpRequest();
 
 /* Global variables */
 
-var graphPeriod;
-
+var chartPeriod = 1;
 
 function main() {
+    httpRequest.timeout = 3000;
+
     /* Register call back function to process http requests */
     httpRequest.onreadystatechange = function() {
         if (httpRequest.readyState == 4 && httpRequest.status == 200) {
@@ -208,30 +247,38 @@ function main() {
     httpRequest.ontimeout = function(e) {
         displayOfflineStatus();
     };
-
+    
+    initializeDateSelector();
     getRadmonData();
-    graphPeriod = 1;
-    getRadmonGraphs();
-    setInterval(getRadmonData, 5000);
-    setInterval(getRadmonGraphs, 300000);
+    getRadmonCharts();
+    setInterval(getRadmonData, 2000);
+    setInterval(getRadmoncharts, 300000);
 }
 
 function getRadmonData() {
-    httpRequest.open("GET", radmonDataUrl, true);
-    httpRequest.timeout = 3000;
+    httpRequest.open("POST", radmonDataUrl, true);
     httpRequest.send();
 }
 
 function setChartPeriod(n) {
-    graphPeriod = n;
-    getRadmonGraphs();   
+    /* Show custom charts if custom charts selected, otherwise show
+       stock charts. */
+    chartPeriod = n;
+    if (n == 0) {
+        customChartsContainer.style.display = "block";
+        stockChartsContainer.style.display = "none";
+    } else {
+        customChartsContainer.style.display = "none";
+        stockChartsContainer.style.display = "block";
+        getRadmonCharts();   
+    }
 }
 
-function getRadmonGraphs() {
+function getRadmonCharts() {
     var d = new Date;
     var pfx;
 
-    switch(graphPeriod) {
+    switch(chartPeriod) {
         case 1:
             pfx = "24hr_";
             break;
@@ -250,6 +297,12 @@ function displayData(dataItem) {
     var timeStamp, date, time, hourminute;
     var localDateObj,localTimeZone;
 
+    // Custom charts can only be generated by the local server, i.e,
+    // with access to rrdtool database.
+    if (dataItem.serverMode == "primary") {
+        customSelector.style.visibility = "visible";
+    }
+
     timeStamp = dataItem.date;
     date = timeStamp.split(" ")[0];
     time = timeStamp.split(" ")[1];
@@ -259,11 +312,11 @@ function displayData(dataItem) {
     
     date_e.innerHTML = date;    
     time_e.innerHTML = hourminute +
-        "  <small>(GMT+" + localTimeZone + ")</small>";    
+        "  <small>(UTC-" + localTimeZone + ")</small>";    
     cpm_e.innerHTML = dataItem.CPM;    
     cps_e.innerHTML = dataItem.CPS;    
     uSvPerHr_e.innerHTML = dataItem.uSvPerHr;    
-    mode_e.innerHTML = dataItem.Mode;    
+    mode_e.innerHTML = dataItem.mode;    
 
     status_e.innerHTML = dataItem.status;    
     if (dataItem.status == "online") {
@@ -277,7 +330,7 @@ function displayOfflineStatus() {
     var d = new Date();
     localTimeZone = d.getTimezoneOffset() / 60;
     date_e.innerHTML = (d.getMonth() + 1) + "/" + d.getDate() + "/" + d.getFullYear();    
-    time_e.innerHTML = d.getHours() + ":" + d.getMinutes() + "  <small>(GMT+" + 
+    time_e.innerHTML = d.getHours() + ":" + d.getMinutes() + "  <small>(UTC-" + 
                        localTimeZone + ")</small>";
     cpm_e.innerHTML = "";    
     cps_e.innerHTML = "";    
@@ -287,6 +340,22 @@ function displayOfflineStatus() {
     status_e.style.color = "red";
 }
 
+function initializeDateSelector() {
+    var d = new Date();
+
+    var dEnd = new Date(d.getFullYear(),
+               d.getMonth(), d.getDate() - 0);
+
+    var dBegin = new Date(d.getFullYear(),
+               d.getMonth(), d.getDate() - 1);
+
+    document.getElementById("beginDate").valueAsDate = dBegin;
+    document.getElementById("endDate").valueAsDate = dEnd;
+}
+
+function getCustomCharts() {
+    fmDateSelector.submit();
+}
 </script>
 
 </body>
