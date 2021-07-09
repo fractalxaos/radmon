@@ -60,7 +60,7 @@ _USE_RADMON_TIMESTAMP = True
    ### DEFAULT RADIATION MONITOR URL ###
 
 _DEFAULT_RADIATION_MONITOR_URL = \
-    "http://192.168.1.24"
+    "{your radiation monitor url"
 
     ### FILE AND FOLDER LOCATIONS ###
 
