@@ -36,6 +36,8 @@
 #   * v23 released 16 Nov 2018 by J L Owrey: improved fault handling
 #         and data conversion
 #   * v24 released 14 Jun 2021 by J L Owrey; minor revisions
+#   * v25 released 9 Jul 2021 by J L Owrey; improved handling of
+#         monitor status function
 #
 #2345678901234567890123456789012345678901234567890123456789012345678901234567890
 
@@ -58,7 +60,7 @@ _USE_RADMON_TIMESTAMP = True
    ### DEFAULT RADIATION MONITOR URL ###
 
 _DEFAULT_RADIATION_MONITOR_URL = \
-    "{your radiation monitor url}"
+    "http://192.168.1.24"
 
     ### FILE AND FOLDER LOCATIONS ###
 
@@ -100,7 +102,7 @@ debugMode = False
 # count of failed attempts to get data from radiation monitor
 failedUpdateCount = 0
 # detected status of radiation monitor device
-radmonOnline = True
+radmonOnline = False
 
 # status of reset command to radiation monitor
 remoteDeviceReset = False
@@ -147,11 +149,9 @@ def terminateAgentProcess(signal, frame):
            signal, frame - dummy parameters
        Returns: nothing
     """
-    # Inform downstream clients by removing output data file.
-    if os.path.exists(_OUTPUT_DATA_FILE):
-       os.remove(_OUTPUT_DATA_FILE)
     print('%s terminating radmon agent process' % \
               (getTimeStamp()))
+    setStatusToOffline()
     sys.exit(0)
 ##end def
 
@@ -174,12 +174,8 @@ def getRadiationData(dData):
 
     try:
         currentTime = time.time()
-
         response = urlopen(sUrl, timeout=_HTTP_REQUEST_TIMEOUT)
-
-        if verboseMode:
-            requestTime = time.time() - currentTime
-            print("http request: %.4f seconds" % requestTime)
+        requestTime = time.time() - currentTime
 
         content = response.read().decode('utf-8')
         content = content.replace('\n', '')
@@ -198,9 +194,10 @@ def getRadiationData(dData):
 
     if debugMode:
         print(content)
+    if verboseMode:
+        print("http request successful: %.4f sec" % requestTime)
     
     dData['content'] = content
-
     return True
 ##end def
 
@@ -221,17 +218,19 @@ def parseDataString(dData):
         print("%s parseDataString: %s" % (getTimeStamp(), exError))
         return False
 
+    # Verfy the expected number of data items have been received.
+    if len(lData) != 5:
+        print("%s parse failed: corrupted data string" % getTimeStamp())
+        return False;
+
     # Load the parsed data into a dictionary for easy access.
     for item in lData:
         if "=" in item:
             dData[item.split('=')[0]] = item.split('=')[1]
+
     # Add status to dictionary object
     dData['status'] = 'online'
-
-    # Verfy the expected number of data items have been received.
-    if len(dData) != 6:
-        print("%s parse failed: corrupted data string" % getTimeStamp())
-        return False;
+    dData['serverMode'] = _SERVER_MODE
 
     return True
 ##end def
@@ -278,18 +277,11 @@ def writeOutputFile(dData):
                    to the output data file
        Returns: True if successful, False otherwise
     """
-    # Create temporary copy of output data dictionary
-    # and remove unnecessary items.
-    dTemp = dict(dData)
-    dTemp.pop('ELT')
-    dTemp.pop('UTC')
-
     # Format the radmon data as string using java script object notation.
     jsData = json.loads("{}")
     try:
-        for key in dTemp:
-            jsData.update({key:dTemp[key]})
-        jsData.update({"serverMode":"%s" % _SERVER_MODE })
+        for key in dData:
+            jsData.update({key:dData[key]})
         sData = "[%s]" % json.dumps(jsData)
     except Exception as exError:
         print("%s writeOutputFile: %s" % (getTimeStamp(), exError))
@@ -309,6 +301,35 @@ def writeOutputFile(dData):
 
     return True
 ## end def
+
+def setRadmonStatus(updateSuccess):
+    """Detect if radiation monitor is offline or not available on
+       the network. After a set number of attempts to get data
+       from the monitor set a flag that the radmon is offline.
+       Parameters:
+           updateSuccess - a boolean that is True if data request
+                           successful, False otherwise
+       Returns: nothing
+    """
+    global failedUpdateCount, radmonOnline
+
+    if updateSuccess:
+        failedUpdateCount = 0
+        # Set status and send a message to the log if the device
+        # previously offline and is now online.
+        if not radmonOnline:
+            print('%s radiation monitor online' % getTimeStamp())
+            radmonOnline = True
+        return
+    elif failedUpdateCount == _MAX_FAILED_DATA_REQUESTS - 1:
+        # Max number of failed data requests, so set
+        # device status to offline.
+        setStatusToOffline()
+    ## end if
+    failedUpdateCount += 1
+##end def
+
+    ### DATABASE FUNCTIONS ###
 
 def updateDatabase(dData):
     """
@@ -343,38 +364,9 @@ def updateDatabase(dData):
         return False
 
     if verboseMode and not debugMode:
-        print("update database")
+        print("database update successful")
 
     return True
-##end def
-
-def setRadmonStatus(updateSuccess):
-    """Detect if radiation monitor is offline or not available on
-       the network. After a set number of attempts to get data
-       from the monitor set a flag that the radmon is offline.
-       Parameters:
-           updateSuccess - a boolean that is True if data request
-                           successful, False otherwise
-       Returns: nothing
-    """
-    global failedUpdateCount, radmonOnline
-
-    if updateSuccess:
-        failedUpdateCount = 0
-        # Set status and send a message to the log if the radmon was
-        # previously offline and is now online.
-        if not radmonOnline:
-            print('%s radiation monitor online' % getTimeStamp())
-            radmonOnline = True
-    else:
-        # The last attempt failed, so update the failed attempts
-        # count.
-        failedUpdateCount += 1
-
-    if failedUpdateCount >= _MAX_FAILED_DATA_REQUESTS:
-        # Max number of failed data requests, so set
-        # monitor status to offline.
-        setStatusToOffline()
 ##end def
 
 def createGraph(fileName, dataItem, gLabel, gTitle, gStart,
@@ -514,6 +506,7 @@ def main():
     signal.signal(signal.SIGTERM, terminateAgentProcess)
     signal.signal(signal.SIGINT, terminateAgentProcess)
 
+    print('===================')
     print('%s starting up radmon agent process' % \
                   (getTimeStamp()))
 
