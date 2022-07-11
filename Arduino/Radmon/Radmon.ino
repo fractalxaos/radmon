@@ -2,14 +2,14 @@
  Background Radiation Monitor - Web Server
  
  A simple web server that makes available to clients over the Internet
- readings from a MightyOhm Geiger counter. The MightyOhm is connected to
- an Arduino Uno with attached Ethernet shield.  This software module
+ readings from a MightyOhm Geiger counter. The MightyOhm is connected
+ to an Arduino Uno with attached Ethernet shield.  This software module
  runs on the Arduino Uno an embedded HTTP server by which Internet
  applications can query the MightyOhm for Geiger counter readings.
  Also, this software runs a Network Time Protocol (NTP) client, that
  periodically synchronizes the local system clock to network time.
- Included is a simple command line interface that may be used to change the
- network interface IP address, NTP server address, or configure a
+ Included is a simple command line interface that may be used to change
+ the network interface IP address, NTP server address, or configure a
  verbose output mode.
  
  Copyright 2018 Jeff Owrey
@@ -47,7 +47,7 @@
  Revision History:  
    * v10 released 25 Feb 2014 by J L Owrey
    * v11 released 24 Jun 2014 by J L Owrey
-       - optimization of processRxByte function to conserve SRAM
+       - optimization of processByteFromMightyOhm function to conserve SRAM
        - removal of non-used function code
        - defaults to APIPA IP address in the event a DHCP address
          cannot be obtained
@@ -69,6 +69,21 @@
    * v16 released 16 Sep 2017 by J L Owrey
        - added capability of rebooting via network http request,
          i.e., "http://{device IP address}/reset"
+   * v17 released 29 Oct 2019 by J L Owrey
+       - modified NTP server address user setting to allow fully
+         qualified domain names as well as IP addresses.  Default
+         NTP address set to "pool.ntp.org" per ntp.org request to use
+         (in order to facilitate load balancing) the fully qualified
+         domain name instead of individual server IP addresses.
+   * v18 released 01 Nov 2019 by J L Owrey
+       - fixed a bug in NTP time synchronization whereby the network time
+         synchronization would only occur during boot up.  Thereafter NTP 
+         time synchronization would fail to happen, resulting in a large 
+         amount of clock drift.
+   * v19 released 10 Jul 2022 by J L Owrey
+       - improved processing of serial data from the MightyOhm Geiger counter
+
+12345678901234567890123456789012345678901234567890123456789012345678901234567890         
 */
 
 /***  PREPROCESSOR DEFINES  ***/
@@ -79,8 +94,8 @@
  Define the header and version number displayed at startup
  and also by the 'view settings' command.
 */
-#define STARTUP_HEADER "\n\rRadmon v1.6 (c) 2018\n"
-#define RADMON_VERSION "v1.6"
+#define STARTUP_HEADER "\n\rRadmon v1.9 (c) 2022"
+#define RADMON_VERSION "v1.9"
 /*
  The following define sets the MAC address of the device.  This
  address is a permanent attribute of the device's Ethernet interface,
@@ -110,18 +125,23 @@
 /*
  The following defines are for configuring a local NTP client
  for synchronizing the local system clock to network time.
- Note that the default setting is the IP address of the following
- time server:
-              time-c-b.nist.gov
+ Note that the ntp server address should be sent to the local
+ server pool of the country where the radmon will be used.  See
+ the web site 'ntp.org' for details. Users in the USA should set
+ the ntp server to 'us.pool.ntp.org'.
 */
-#define DEFAULT_NTP_SERVER_IP_ADDR "132.163.96.3"
+#define DEFAULT_NTP_SERVER_ADDR "us.pool.ntp.org"
 #define NTP_PORT 8888
-#define NTP_PACKET_SIZE 48 // NTP time stamp is in the first 48 bytes of the message
+#define NTP_PACKET_SIZE 48 // NTP time in the first 48 bytes of the message
 /*
  The following defines how often the system clock gets synchronized
  to network time.
 */
-#define NET_SYNCH_INTERVAL 43200 //number in seconds
+#define NTP_SYNCH_INTERVAL 43200 // number in seconds - 2 times a day
+/*
+ Number of retries if first time server request fails.
+*/
+#define TIME_SERVER_REQUEST_RETRIES 3
 /*
  The following defines the size of the buffer space required for the
  serial data string from the Mighty Ohm Geiger counter.  The serial
@@ -178,9 +198,9 @@ SoftwareSerial MightyOhmTxOut(5, 6);
  Create global variables to store the MightOhm data, next heartbeat
  time, and next synchronization time.
 */
-char mightOhmData[MIGHTYOHM_DATA_STRING_LENGTH + 1];
-unsigned long lastSerialUpdateTime;
-time_t nextClockSynchTime;
+char mightyOhmData[MIGHTYOHM_DATA_STRING_LENGTH + 1];
+unsigned long nextSerialUpdateTime = 0;
+unsigned long nextClockSynchTime = 0;
 /*
  Create global variables to store the verbose mode state (ON or OFF)
  and the IP address mode state (static or DHCP).
@@ -189,10 +209,10 @@ boolean bVerbose;
 boolean bUseStaticIP;
 /*
  Create and initialize global arrays to hold the current IP address
- and the NTP server IP address.
+ and the NTP server address.
 */
 byte ipAddr[4];
-byte ntpIpAddr[4];
+char timeServer[32];
 
 /*** SYSTEM STARTUP  ***/
 
@@ -215,11 +235,13 @@ void setup()
    Start up the Ethernet interface using either a static or
    DHCP supplied address (depending on stored system configuration).
   */
-  if(bUseStaticIP)
+  if (bUseStaticIP)
   {
     Ethernet.begin(mac, ipAddr);
-  } else {
-    if ( Ethernet.begin(mac) == 0 )
+  }
+  else
+  {
+    if (Ethernet.begin(mac) == 0)
     {
       /* DHCP not responding so use APIPA address */
       parseIpAddress(ipAddr, DEFAULT_APIPA_IP_ADDRESS);
@@ -229,13 +251,10 @@ void setup()
   }
   Serial.print(F("IP address: ")); Serial.println(Ethernet.localIP());
   /*
-   Start up NTP client service.
-  */
-  Udp.begin(NTP_PORT);
-  /*
     Synchronize the system clock to network time.
   */
   synchronizeSystemClock();
+  nextClockSynchTime = now() + NTP_SYNCH_INTERVAL;
   /*
    Start up the HTTP server.
   */
@@ -245,33 +264,23 @@ void setup()
     Open serial communications to the MightyOhm device.
   */  
   MightyOhmTxOut.begin(9600);
-   /*
-    Initialize initial time for sending out the hearbeat string. Normally
-    the system clock will be at approx 3200 msec at this point. So allow
-    some additional time for data to accumulate in MightyOhm data buffer.
-  */
-  lastSerialUpdateTime = -1;
   /*
    Initialize MightyOhm data string to empty.
   */
-  mightOhmData[0] = 0;
+  mightyOhmData[0] = 0;
   return;
 }
 
 /*** MAIN LOOP ***/
 
 void loop() {
-  long currentTime;
-
-  currentTime = millis();
-  
   /*
    Check for user keyboard 'c' pressed.  This character switches
    to command mode.
   */   
-  if ( Serial.available() ) {
+  if (Serial.available()) {
     // get incoming byte
-    if(Serial.read() == 'c') {
+    if (Serial.read() == 'c') {
       commandMode();
     }
   }
@@ -280,8 +289,8 @@ void loop() {
     Poll serial input buffer from MightyOhm for new data and 
     process received bytes to form a complete data string.
   */
-  while ( MightyOhmTxOut.available() ) {
-    processRxByte( MightyOhmTxOut.read() );
+  while (MightyOhmTxOut.available()) {
+    processByteFromMightyOhm(MightyOhmTxOut.read());
   }
   
   /*
@@ -289,9 +298,12 @@ void loop() {
     serial port at regular intervals.
   */
   if (bVerbose) {
-    if (abs(millis() - lastSerialUpdateTime) > SERIAL_UPDATE_INTERVAL) {
-      lastSerialUpdateTime = millis();
-      Serial.println( mightOhmData );
+    if (millis() > nextSerialUpdateTime) {
+      Serial.println(mightyOhmData);
+      /* 
+       Set the time for the next serial update to occur.
+      */
+      nextSerialUpdateTime = millis() + SERIAL_UPDATE_INTERVAL;
     }
   }
   
@@ -299,14 +311,19 @@ void loop() {
    Periodically synchronize local system clock to time
    provided by NTP time server.
   */
-  if ( now() > nextClockSynchTime ) {
+  if (now() > nextClockSynchTime) {
     synchronizeSystemClock();
+    /* 
+     Set the time for the next network NTP
+     time synchronization to occur.
+    */
+    nextClockSynchTime = now() + NTP_SYNCH_INTERVAL;
   }
   
   /*
    Listen for and and process requests from HTTP clients.
   */  
-  listenForEthernetClients();
+  listenForNetworkClients();
 
   #ifdef DEBUG
     Serial.print("lp time: "); Serial.println(millis() - currentTime);
@@ -314,39 +331,9 @@ void loop() {
 }
 
 /*
- Synchronize the local system clock to
- network time provided by NTP time server.
-*/
-void synchronizeSystemClock()
-{
-  byte count;
-  
-  Serial.println(F("Synchronizing with network time server..."));
-    
-  for(count = 0; count < 3; count++)  // Attempt to synchronize 3 times
-  {
-    if(syncToNetworkTime() == 1)
-    {
-      //  Synchronization successful
-      break;
-    }
-    delay(1000);
-  } /* end for */ 
-  if(count == 3) {
-    Serial.println(F("synch failed"));
-  }
-  /* 
-   Set the time for the next network NTP
-   time synchronization to occur.
-  */
-  nextClockSynchTime = now() + NET_SYNCH_INTERVAL;
-  return;
-}
-
-/*
   Handle HTTP GET requests from an HTTP client.
 */  
-void listenForEthernetClients()
+void listenForNetworkClients()
 {
   // listen for incoming clients
   EthernetClient client = httpServer.available();
@@ -366,12 +353,12 @@ void listenForEthernetClients()
     firstLineFound = false;
   
     /*
-     * The beginning and end of an HTTP client request is always signaled
-     * by a blank line, that is, by two consecutive line feed and carriage 
-     * return characters "\r\n\r\n".  The following lines of code 
-     * look for this condition, as well as the url extension (following
-     * "GET").
-     */
+     The beginning and end of an HTTP client request is always signaled
+     by a blank line, that is, by two consecutive line feed and carriage 
+     return characters "\r\n\r\n".  The following lines of code 
+     look for this condition, as well as the url extension (following
+     "GET").
+    */
     
     while (client.connected())  {
       if (client.available()) {
@@ -407,7 +394,9 @@ void listenForEthernetClients()
             i = 1;
           }
 
-          if (firstLineFound && (c == '\n' || i > REQUEST_STRING_BUFFER_LENGTH - 2)) {
+          if (firstLineFound && (c == '\n' || i >
+              REQUEST_STRING_BUFFER_LENGTH - 2))
+          {
             processedCommand = true;
           }
         }
@@ -422,11 +411,14 @@ void listenForEthernetClients()
     transmitHttpHeader(client);
     
     char * pStr = strtok(sBuf, " ");
-    if (pStr != NULL) {
-      if (strcmp(pStr, "/rdata") == 0)
+    if (pStr != NULL)
+    {
+      if (strcmp(pStr, "/rdata") == 0) {
         transmitRawData(client);
-      else if (strcmp(pStr, "/") == 0)
+      }
+      else if (strcmp(pStr, "/") == 0) {
         transmitWebPage(client);
+      }
       else if(strcmp(pStr, "/reset") == 0) {
         client.print(F("ok"));
         delay(10);
@@ -434,13 +426,18 @@ void listenForEthernetClients()
         client.stop();
         software_Reset();
       }
-      else 
+      else {
         transmitErrorPage(client);
+      }
     }
+    client.println();
 
-    //Serial.println(mightOhmData);
+    #ifdef DEBUG
+      Serial.println(mightyOhmData);  //debug
+    #endif
+    
     // give the web browser time to receive the data
-    delay(10);
+    delay(20);
     // close the connection:
     client.stop();
   }
@@ -466,19 +463,19 @@ void transmitHttpHeader(EthernetClient client) {
 void transmitWebPage(EthernetClient client) {
   char strBuffer[MIGHTYOHM_DATA_STRING_LENGTH];
 
-  strcpy(strBuffer, mightOhmData);
+  strcpy(strBuffer, mightyOhmData);
   /*
-   * Send the actual HTML page the user will see in their web
-   * browser.
+   Send the actual HTML page the user will see in their web
+   browser.
   */
-  client.print(F("<!DOCTYPE HTML>" \
+  client.print(F("<!DOCTYPE HTML>"                               \
                  "<html><head><title>Radiation Monitor</title>"  \
-                 "<style>pre {font: 16px arial, sans-serif;}" \
-                 "p {font: 16px arial, sans-serif;}"
-                 "h2 {font: 24px arial, sans-serif;}</style>" \
-                 "</head><body><h2>Radiation Monitor</h2>" \
-                 "<p><a href=\"http://intravisions.com/radmon/\">" \
-                 "<i>intravisions.com/radmon</i></a></p>" \
+                 "<style>pre {font: 16px arial, sans-serif;}"    \
+                 "p {font: 16px arial, sans-serif;}"             \
+                 "h2 {font: 24px arial, sans-serif;}</style>"    \
+                 "</head><body><h2>Radiation Monitor</h2>"       \
+                 "<p><a href=\"http://intravisions.com/\">"      \
+                 "<i>IntraVisions.com</i></a></p>"               \
                  "<hr>"));
   /* Data Items */             
   client.print(F("<pre>UTC &#9;"));
@@ -508,10 +505,10 @@ void transmitWebPage(EthernetClient client) {
 void transmitRawData(EthernetClient client) {
   char strBuffer[MIGHTYOHM_DATA_STRING_LENGTH];
 
-  strcpy(strBuffer, mightOhmData);
+  strcpy(strBuffer, mightyOhmData);
   /*
-   * Format and transmit a JSON compatible data string.
-   */
+   Format and transmit a JSON compatible data string.
+  */
   client.print(F("$,UTC="));
   client.print(strtok(strBuffer, " "));
   client.print(F(" "));
@@ -535,16 +532,13 @@ void transmitRawData(EthernetClient client) {
 }
 
 /*
- * Send an error message web page back to the requesting
- * client when the client provides an invalid url extension.
- */
+ Send an error message web page back to the requesting
+ client when the client provides an invalid url extension.
+*/
 void transmitErrorPage(EthernetClient client) {
-  client.print(F("<!DOCTYPE HTML>" \
+  client.print(F("<!DOCTYPE HTML>"                                      \
                  "<html><head><title>Radiation Monitor</title></head>"  \
-                 "<body><h2>Invalid Url</h2>"  \
-                 "<p>You have requested a service at an unknown " \
-                 "url.</p><p>If you think you made this request in error, " \
-                 "please disconnect and try your request again.</p>" \
+                 "<body><h2>404 Not Found</h2>"                         \
                  "</body></html>"
                  ));
 }
@@ -553,10 +547,11 @@ void transmitErrorPage(EthernetClient client) {
  Process bytes received from the MightyOhm Geiger counter,
  one at a time, to create a well formed string.
 */
-void processRxByte( char RxByte )
+void processByteFromMightyOhm( char RxByte )
 {
   static char readBuffer[MIGHTYOHM_DATA_STRING_LENGTH];
   static byte cIndex = 0;
+  int headerPos = 0;
   
   /*
      Discard carriage return characters.
@@ -573,36 +568,31 @@ void processRxByte( char RxByte )
   else if (RxByte == '\n')
   {
     /*
-     First copy the timestamp to the MightyOhm data buffer. The "CPS"
-     characters are not preserved in the temporary read buffer, so
-     restore them to the MightyOhm data buffer, as well.
+     If a complete line of data has been received from the MightyOhm
+     Geiger counter, then add a timestamp and copy the line to the
+     MightyOhm data buffer.  A line is complete if the line
+     begins with a proper header and ends with a newline character.
     */
-    sprintf( mightOhmData, "%d:%02d:%02d %d/%d/%d, %s",       \
-          hour(), minute(), second(), month(), day(), year(),  \
-          MIGHTYOHM_DATA_STRING_HEADER );
-    /*
-     Now copy the rest of the data in the temporary read buffer to the
-     MightyOhm data buffer.
-    */ 
-    strcat(mightOhmData, readBuffer);
+    headerPos = strstr(readBuffer, MIGHTYOHM_DATA_STRING_HEADER) - readBuffer;
+    if( headerPos == 0 )
+    {
+      /*
+       Insert a timestamp at the beginning of the MightyOhm data buffer.
+       */
+      sprintf( mightyOhmData, "%d:%02d:%02d %d/%d/%d, ",       \
+            hour(), minute(), second(), month(), day(), year() );
+      /*
+       Now copy the rest of the data in the temporary read buffer to the
+       MightyOhm data buffer.
+      */ 
+      strcat(mightyOhmData, readBuffer);
+    }
     /*
      Flush the temporary read buffer.
     */
     cIndex = 0;
     readBuffer[0] = 0;
     return;
-  }
-  /* 
-   A new line of data will always have "CPS" as the first
-   three characters.  Therefore, when these characters occur in
-   sequence, the read buffer should begin collecting characters.
-   This is a kluge to deal with an inherent problem in the Software
-   Serial library implementation that results in characters dropped
-   from the software serial stream buffer.
-  */
-  if( strstr(readBuffer, MIGHTYOHM_DATA_STRING_HEADER) > 0 ) 
-  {
-    cIndex = 0;
   }
   /*
    Read characters into a temporary buffer until
@@ -617,6 +607,48 @@ void processRxByte( char RxByte )
   return;
 } 
 
+/*
+ Synchronize the local system clock to
+ network time provided by NTP time server.
+*/
+void synchronizeSystemClock()
+{
+  byte count;
+
+  Serial.print(F("Synchronizing with NTP server: "));
+  Serial.print(timeServer);Serial.println(F("..."));
+
+  /*
+   * NOTICE!!!    NOTICE!!!   NOTICE!!!
+   * Due to a bug in the Ethernet library, it is necessary to reinitialize 
+   * the ethernet UDP library everytime after an  after an EthernetClient 
+   * class object has been instantiated.  Also, the Udp stop() function 
+   * must be called at the end of each session.
+   */
+  Udp.begin(NTP_PORT);  // see above comment
+
+  count = 1;
+  while (true)  // Attempt to synchronize 3 times
+  {
+    if (syncToNetworkTime() == 1) {
+      //  Synchronization successful
+      break;
+    }
+    if (count == TIME_SERVER_REQUEST_RETRIES) {
+      Serial.print(F("synch failed: "));
+      break;
+    }
+    count++;
+    delay(2000);
+  }
+  if (count > 1) {
+    Serial.print(count);Serial.println(F(" retries"));
+  }
+  
+  Udp.stop(); // see above comment
+  return;
+}
+
 /* 
   Send a UDP request packet to an NTP time server and listen for a reply.
   When the reply arrives, parse the received UPD packet and compute unix
@@ -625,19 +657,20 @@ void processRxByte( char RxByte )
 int syncToNetworkTime()
 {
   /*
-   Send a request to the NTP time server.
+   Send a request to the NTP time server.  Define a buffer to hold outgoing
+   and incoming packets.
   */
-  byte packetBuffer[ NTP_PACKET_SIZE]; //buffer to hold outgoing and incoming packets 
+  byte packetBuffer[ NTP_PACKET_SIZE]; // buffer to hold packets
   /*
    Send an NTP packet to the time server and allow for network lag
    before checking if a reply is available.
   */
-  sendNTPpacket(packetBuffer);
-  delay(2000);  // allow 2000 milli-seconds for network lag
-
+  sendNTPpacket(timeServer, packetBuffer);
   /*
    Wait for response from NTP time server.
   */
+  delay(1000);  // allow 1000 milli-seconds for network lag
+
   if ( Udp.parsePacket() )
   {  
     /*
@@ -645,8 +678,8 @@ int syncToNetworkTime()
     */
     Udp.read( packetBuffer, NTP_PACKET_SIZE );
     /*
-     The timestamp starts at byte 40 of the received packet and is four bytes,
-     or two words, long. First, esxtract the two words.
+     The timestamp starts at byte 40 of the received packet and is four
+     bytes, or two words, long. First, esxtract the two words.
     */
     unsigned long highWord = word(packetBuffer[40], packetBuffer[41]);
     unsigned long lowWord = word(packetBuffer[42], packetBuffer[43]);
@@ -674,9 +707,9 @@ int syncToNetworkTime()
 }
 
 /*
-  Send an NTP request to the NTP time server.
+ Send an NTP request to the NTP time server.
 */
-void sendNTPpacket( byte* packetBuffer )
+void sendNTPpacket( char * serverAddress, byte * packetBuffer )
 {
   /*
    Set all bytes in the buffer to 0.
@@ -699,8 +732,8 @@ void sendNTPpacket( byte* packetBuffer )
   /*
    All NTP fields have been given values, so now
    send a packet requesting a timestamp.
-  */ 		
-  Udp.beginPacket( ntpIpAddr, 123 ); //NTP requests are to port 123
+  */
+  Udp.beginPacket( serverAddress, 123 ); // NTP requests are to port 123
   Udp.write( packetBuffer, NTP_PACKET_SIZE );
   Udp.endPacket();
   return;
@@ -717,31 +750,27 @@ void commandMode()
 {
   char sCmdBuf[2];
   
-  getCurrentIP();  //used for display of settings
+  getCurrentIP();  // used for display of settings
+
+  Serial.println();
+  displayMenu(); // display the menu
   
   while(true)
   {
     /*
-     Print the menu.
-    */
-    Serial.print( F("\n"                         \
-                  "1 - view settings\r\n"        \
-                  "2 - set IP address\r\n"       \
-                  "3 - set NTP server\r\n"       \
-                  "4 - toggle verbose\r\n"       \
-                  "5 - exit without saving\r\n"  \
-                  "6 - save & restart\r\n"       \
-                  ">"));
-    /*
      Get the command from the user.
     */
+    Serial.print(F(">"));
     getSerialLine(sCmdBuf, 2);
-    Serial.print(F("\n\n\r"));
+    Serial.print(F("\n\r"));
     /* 
      Execute the command.
     */
     switch (sCmdBuf[0])
     {
+      case '0':
+        displayMenu();
+        break;
       case '1':
         displaySettings();
         break;
@@ -749,7 +778,7 @@ void commandMode()
         setIP();
         break;
       case '3':
-        setNTPIP();
+        setNTPServer();
         break;
       case '4':
         toggleVerbose();
@@ -765,6 +794,7 @@ void commandMode()
          server or to initialize the Ethernet interface
          with a static IP address.
         */
+        delay(100);
         software_Reset();
         return;
       default:
@@ -772,6 +802,25 @@ void commandMode()
     } /* end switch */
   } /* end while */
   return;
+}
+
+/*
+ Displays the menu.
+*/
+void displayMenu()
+{
+  /*
+   Print the menu.
+  */
+  Serial.print( F("Available commands (type a number):\r\n" \
+                  "  0 - display this menu\r\n"    \
+                  "  1 - view settings\r\n"        \
+                  "  2 - set IP address\r\n"       \
+                  "  3 - set NTP server\r\n"       \
+                  "  4 - toggle verbose\r\n"       \
+                  "  5 - exit without saving\r\n"  \
+                  "  6 - save & restart\r\n"       \
+              ));  
 }
 
 /*
@@ -801,9 +850,8 @@ void displaySettings()
   Serial.println(sBuf);
   
   // Display NTP server IP address
-  sprintf(sBuf, "%d.%d.%d.%d", ntpIpAddr[0], ntpIpAddr[1], ntpIpAddr[2], ntpIpAddr[3]);
   Serial.print(F("NTP server: ")); 
-  Serial.println(sBuf);
+  Serial.println(timeServer);
 
   // Display verbose mode setting
   printVerboseMode();
@@ -842,21 +890,20 @@ void setIP()
  carriage return as the first character, then use the
  default IP address for the NTP server.
 */
-void setNTPIP()
+void setNTPServer()
 {
-  char sBuf[16];
+  char sBuf[32];
   
-  Serial.print(F("enter IP (<CR> for default): "));
-  getSerialLine(sBuf, 16);
-  
+  Serial.print(F("enter NTP server (<CR> for default): "));
+  getSerialLine(sBuf, 32);
+
   if (strlen(sBuf) == 0)
   {
-    strcpy(sBuf, DEFAULT_NTP_SERVER_IP_ADDR);
-    parseIpAddress(ntpIpAddr, sBuf);
+    strcpy(timeServer, DEFAULT_NTP_SERVER_ADDR);
   }
   else
   {
-    parseIpAddress(ntpIpAddr, sBuf);
+    strcpy(timeServer, sBuf);
   }
   Serial.println();
   return;
@@ -991,13 +1038,20 @@ char* getSerialLine(char* sBuffer, int bufferLength)
 void writeSettingsToEEPROM()
 {
   byte ix;
+  char c;
   for (ix = 0; ix < 4; ix++)
   {
     EEPROM.write(ix, ipAddr[ix]);
-    EEPROM.write(ix + 4, ntpIpAddr[ix]);
   }
-  EEPROM.write(8, bVerbose);
-  EEPROM.write(9, bUseStaticIP);
+  EEPROM.write(4, bVerbose);
+  EEPROM.write(5, bUseStaticIP);
+  ix = 0;
+  while(1) {
+    c = timeServer[ix];
+    EEPROM.write(6 + ix, c);
+    if (c == 0 || ix > 31) break;
+    ix++;
+  }
   return;
 }
 
@@ -1010,13 +1064,20 @@ void writeSettingsToEEPROM()
 void readSettingsFromEEPROM()
 {
   byte ix;
+  char c;
   for (ix = 0; ix < 4; ix++)
   {
     ipAddr[ix] = EEPROM.read(ix);
-    ntpIpAddr[ix] = EEPROM.read(ix + 4);
   }
-  bVerbose = EEPROM.read(8);
-  bUseStaticIP = EEPROM.read(9);
+  bVerbose = EEPROM.read(4);
+  bUseStaticIP = EEPROM.read(5);
+  ix = 0;
+  while(1) {
+    c = EEPROM.read(6 + ix);
+    timeServer[ix] = c;
+    if (c == 0 || ix > 31) break;
+    ix++;
+  }
   return;
 }
 
@@ -1046,4 +1107,3 @@ void software_Reset()
   asm volatile ("  jmp 0");
   return; 
 }  
-
